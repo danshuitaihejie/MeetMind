@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
+    <title>MeetMind · 让会议只留下结论</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="MeetMind 首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>MeetMind</span>
+      </a>
+      <div class="system-status" id="systemStatus">
+        <span class="status-dot"></span>
+        <span>正在检查服务</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">MEETING INTELLIGENCE · 01</p>
+        <h1>把漫长会议，<br /><em>压缩成清晰结论。</em></h1>
+        <p class="hero-copy">
+          上传视频或音频。MeetMind 会提取音轨、删除长静音并加速，
+          再将内容转写为可执行的会议纪要。
+        </p>
+        <div class="hero-metric" aria-label="示例压缩效果">
+          <div><strong>30:00</strong><span>原始会议</span></div>
+          <svg viewBox="0 0 120 18" role="img" aria-label="压缩到">
+            <path d="M1 9h108" />
+            <path d="m103 2 8 7-8 7" />
+          </svg>
+          <div><strong>≤ 20:00</strong><span>送入 AI</span></div>
+        </div>
+      </section>
+
+      <section class="workspace" aria-labelledby="uploadTitle">
+        <div class="panel upload-panel">
+          <div class="panel-heading">
+            <span class="step-number">01</span>
+            <div>
+              <p class="kicker">添加会议记录</p>
+              <h2 id="uploadTitle">上传音频或视频</h2>
+            </div>
+          </div>
+
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input
+              id="fileInput"
+              type="file"
+              accept="audio/*,video/*,.mkv,.m4a,.flac,.ogg"
+              hidden
+            />
+            <span class="upload-icon" aria-hidden="true">↗</span>
+            <span class="drop-title" id="dropTitle">拖放文件到这里</span>
+            <span class="drop-hint" id="dropHint">或点击选择 · MP4 / MOV / MP3 / WAV / M4A</span>
+          </label>
+
+          <div class="selected-file hidden" id="selectedFile">
+            <div class="file-kind" id="fileKind">MP4</div>
+            <div class="file-meta">
+              <strong id="fileName"></strong>
+              <span id="fileInfo"></span>
+            </div>
+            <button class="icon-button" id="removeFile" type="button" aria-label="移除文件">×</button>
+          </div>
+
+          <div class="settings-grid">
+            <label class="field">
+              <span>压缩强度</span>
+              <select id="speedSelect">
+                <option value="1">原速 · 优先准确率</option>
+                <option value="1.25">1.25× · 轻度压缩</option>
+                <option value="1.5" selected>1.5× · 推荐</option>
+                <option value="1.75">1.75× · 高效</option>
+                <option value="2">2× · 最短时长</option>
+              </select>
+            </label>
+            <label class="toggle-field">
+              <span>
+                <strong>智能删除静音</strong>
+                <small>保留自然停顿，移除长空白</small>
+              </span>
+              <input id="trimSilence" type="checkbox" checked />
+              <i aria-hidden="true"></i>
+            </label>
+          </div>
+
+          <label class="field context-field">
+            <span>会议背景 / 专有名词 <small>可选</small></span>
+            <textarea
+              id="contextInput"
+              rows="3"
+              maxlength="4000"
+              placeholder="例如：Q3 产品评审；涉及 MeetMind、Acme Cloud、RAG 等术语"
+            ></textarea>
+          </label>
+
+          <div class="estimate" id="estimate">
+            <span>预计 AI 音频时长</span>
+            <strong id="estimatedDuration">选择文件后计算</strong>
+          </div>
+
+          <button class="primary-button" id="submitButton" type="button" disabled>
+            <span>开始生成会议纪要</span><b aria-hidden="true">→</b>
+          </button>
+          <div class="upload-progress hidden" id="uploadProgress" aria-live="polite">
+            <span id="uploadProgressText">正在上传 0%</span>
+            <i><b id="uploadProgressBar"></b></i>
+          </div>
+          <p class="form-error hidden" id="formError" role="alert"></p>
+        </div>
+
+        <aside class="panel method-panel">
+          <div class="panel-heading compact">
+            <span class="step-number">流程</span>
+            <div><p class="kicker">HOW IT WORKS</p><h2>四步完成</h2></div>
+          </div>
+          <ol class="method-list">
+            <li><span>1</span><div><strong>提取音轨</strong><small>视频画面不会发送给 AI</small></div></li>
+            <li><span>2</span><div><strong>压缩时长</strong><small>删除静音并保音高加速</small></div></li>
+            <li><span>3</span><div><strong>语音转写</strong><small>识别中文、英文与专业术语</small></div></li>
+            <li><span>4</span><div><strong>整理纪要</strong><small>结论、讨论、行动项一目了然</small></div></li>
+          </ol>
+          <div class="privacy-note">
+            <span aria-hidden="true">◉</span>
+            <p><strong>本地预处理</strong>视频先在服务器提取并压缩，只有压缩后的音频进入转写流程。</p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="jobs-section" id="jobsSection" aria-labelledby="jobsTitle">
+        <div class="section-heading">
+          <div><p class="eyebrow">PROCESSING DESK · 02</p><h2 id="jobsTitle">处理记录</h2></div>
+          <button class="text-button" id="refreshJobs" type="button">刷新 ↻</button>
+        </div>
+        <div class="empty-state" id="emptyState">
+          <span>还没有会议记录</span>
+          <p>上传第一个文件后，处理进度和结果会显示在这里。</p>
+        </div>
+        <div class="jobs-list" id="jobsList"></div>
+      </section>
+    </main>
+
+    <template id="jobTemplate">
+      <article class="job-card">
+        <div class="job-summary">
+          <div class="job-file-icon">AU</div>
+          <div class="job-title"><strong></strong><span></span></div>
+          <div class="job-state"><i></i><span></span></div>
+        </div>
+        <div class="job-progress"><i><b></b></i><span></span></div>
+        <div class="job-metrics"></div>
+        <p class="job-error hidden"></p>
+        <div class="job-results hidden">
+          <div class="result-tabs">
+            <button type="button" class="active" data-tab="minutes">会议纪要</button>
+            <button type="button" data-tab="transcript">完整转写</button>
+          </div>
+          <div class="result-content"></div>
+          <div class="result-actions">
+            <button class="copy-button" type="button">复制内容</button>
+            <a data-download="minutes">下载纪要</a>
+            <a data-download="audio">下载压缩音频</a>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <footer>
+      <span>MeetMind</span>
+      <p>更少回放，更多推进。</p>
+    </footer>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

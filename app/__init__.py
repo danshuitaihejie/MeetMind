@@ -1,0 +1,2 @@
+"""MeetMind application package."""
+
