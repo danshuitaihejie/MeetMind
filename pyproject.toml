@@ -7,7 +7,9 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.116.0",
     "httpx>=0.28.1",
+    "onnxruntime<1.22",
     "python-multipart>=0.0.20",
+    "rapidocr>=3.9.2",
     "uvicorn[standard]>=0.35.0",
 ]
 

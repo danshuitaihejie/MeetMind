@@ -118,13 +118,14 @@
         <aside class="panel method-panel">
           <div class="panel-heading compact">
             <span class="step-number">流程</span>
-            <div><p class="kicker">HOW IT WORKS</p><h2>四步完成</h2></div>
+            <div><p class="kicker">HOW IT WORKS</p><h2>四步生成，可选校对</h2></div>
           </div>
           <ol class="method-list">
             <li><span>1</span><div><strong>提取音轨</strong><small>视频画面不会发送给 AI</small></div></li>
             <li><span>2</span><div><strong>压缩时长</strong><small>删除静音并保音高加速</small></div></li>
             <li><span>3</span><div><strong>语音转写</strong><small>识别中文、英文与专业术语</small></div></li>
             <li><span>4</span><div><strong>整理纪要</strong><small>结论、讨论、行动项一目了然</small></div></li>
+            <li><span>+</span><div><strong>智能校对</strong><small>原速复听、本地 OCR 与人工修正</small></div></li>
           </ol>
           <div class="privacy-note">
             <span aria-hidden="true">◉</span>
@@ -168,6 +169,22 @@
             <a data-download="minutes">下载纪要</a>
             <a data-download="audio">下载压缩音频</a>
           </div>
+        </div>
+        <div class="review-panel hidden">
+          <div class="review-heading">
+            <div>
+              <span>ENHANCED REVIEW</span>
+              <strong>不确定文字校对</strong>
+            </div>
+            <button class="review-start" type="button">智能校对：OCR + 原声</button>
+          </div>
+          <p class="review-description">
+            按需以原速重新对齐，视频画面只在本地 OCR。置信度为 AI 交叉校验估值。
+          </p>
+          <div class="review-progress hidden"><i><b></b></i><span></span></div>
+          <p class="review-error hidden"></p>
+          <div class="review-list"></div>
+          <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
         </div>
       </article>
     </template>

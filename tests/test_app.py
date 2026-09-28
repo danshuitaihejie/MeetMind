@@ -87,3 +87,40 @@ def test_retry_failed_job_without_reupload(tmp_path: Path) -> None:
     assert job["status"] == "completed"
     assert job["error"] is None
     assert "MeetMind" in job["minutes"]
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is not installed")
+def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
+    sample = tmp_path / "sample.wav"
+    write_sample_wav(sample)
+    app = create_app(Settings(data_dir=tmp_path / "runtime", mock_ai=True))
+
+    with TestClient(app) as client, sample.open("rb") as audio:
+        created = client.post(
+            "/api/jobs",
+            files={"file": ("sample.wav", audio, "audio/wav")},
+            data={"speed": "1.5", "trim_silence": "false"},
+        ).json()
+        job_id = created["id"]
+        review_response = client.post(f"/api/jobs/{job_id}/review")
+        assert review_response.status_code == 202
+        reviewed = client.get(f"/api/jobs/{job_id}").json()
+        assert reviewed["review_status"] == "ready"
+        assert len(reviewed["review_items"]) == 1
+        item = reviewed["review_items"][0]
+        assert client.get(f"/api/jobs/{job_id}/review/{item['id']}/audio").status_code == 200
+
+        apply_response = client.post(
+            f"/api/jobs/{job_id}/review/apply",
+            json={
+                "corrections": [
+                    {"item_id": item["id"], "text": "主持人：确认 MeetMind 第一版流程。"}
+                ]
+            },
+        )
+        assert apply_response.status_code == 202
+        corrected = client.get(f"/api/jobs/{job_id}").json()
+
+    assert corrected["review_status"] == "completed"
+    assert "MeetMind" in corrected["transcript"]
+    assert corrected["review_items"][0]["correction"].startswith("主持人")

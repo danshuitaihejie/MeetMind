@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import mimetypes
 import time
 from collections.abc import Callable
@@ -9,6 +10,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.models import ReviewItem, ReviewSuggestion, TranscriptSegment
 
 
 class AIConfigurationError(RuntimeError):
@@ -134,6 +136,213 @@ class AIService:
             raise MiniMaxAPIError("MiniMax ASR 没有返回可用的转写文本")
         return transcript.strip()
 
+    def transcribe_detailed(self, audio_path: Path) -> list[TranscriptSegment]:
+        """Transcribe original-speed audio with timestamps for optional review."""
+        if self.settings.mock_ai:
+            return [
+                TranscriptSegment(
+                    index=0,
+                    start_seconds=0,
+                    end_seconds=0.8,
+                    speaker="1",
+                    text="主持人：今天确认 Meet Mine 第一版流程。",
+                )
+            ]
+
+        media_type = mimetypes.guess_type(audio_path.name)[0] or "audio/mpeg"
+        with audio_path.open("rb") as audio_file:
+            payload = self._post(
+                "/v1/speech_to_text",
+                data={
+                    "model": self.settings.transcription_model,
+                    "response_format": "verbose_json",
+                    "timestamp_level": "sentence",
+                    "stream": "false",
+                },
+                files={"file": (audio_path.name, audio_file, media_type)},
+            )
+
+        raw_segments = payload.get("segments")
+        if not isinstance(raw_segments, list):
+            raise MiniMaxAPIError("MiniMax ASR 没有返回句段时间戳")
+
+        segments: list[TranscriptSegment] = []
+        for raw in raw_segments:
+            if not isinstance(raw, dict):
+                continue
+            text = raw.get("text")
+            start = raw.get("start", raw.get("start_time"))
+            end = raw.get("end", raw.get("end_time"))
+            if not isinstance(text, str) or not text.strip():
+                continue
+            if not isinstance(start, int | float) or not isinstance(end, int | float):
+                continue
+            speaker = raw.get("speaker")
+            segments.append(
+                TranscriptSegment(
+                    index=len(segments),
+                    start_seconds=max(0, float(start)),
+                    end_seconds=max(float(start), float(end)),
+                    text=text.strip(),
+                    speaker=str(speaker) if speaker is not None else None,
+                )
+            )
+        if not segments:
+            raise MiniMaxAPIError("MiniMax ASR 没有返回可用的句段")
+        return segments
+
+    @staticmethod
+    def _json_from_content(content: str) -> dict[str, Any]:
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start < 0 or end <= start:
+            raise MiniMaxAPIError("MiniMax 校对模型没有返回 JSON")
+        try:
+            payload = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError as exc:
+            raise MiniMaxAPIError("MiniMax 校对模型返回的 JSON 无法解析") from exc
+        if not isinstance(payload, dict):
+            raise MiniMaxAPIError("MiniMax 校对模型返回格式不正确")
+        return payload
+
+    def _chat(self, system: str, user: str, max_tokens: int = 4096) -> str:
+        payload = self._post(
+            "/v1/chat/completions",
+            json={
+                "model": self.settings.summary_model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "stream": False,
+                "temperature": 0.1,
+                "max_completion_tokens": max_tokens,
+                "thinking": {"type": "disabled"},
+            },
+        )
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise MiniMaxAPIError("MiniMax 文本模型没有返回可用内容") from exc
+        if not isinstance(content, str) or not content.strip():
+            raise MiniMaxAPIError("MiniMax 文本模型没有返回可用内容")
+        return content.strip()
+
+    def find_review_suggestions(
+        self,
+        segments: list[TranscriptSegment],
+        fast_transcript: str,
+        context: str = "",
+    ) -> list[ReviewSuggestion]:
+        """Estimate suspicious ASR segments; MiniMax ASR itself exposes no confidence."""
+        if self.settings.mock_ai:
+            return [
+                ReviewSuggestion(
+                    segment_index=0,
+                    suggested_text="主持人：今天确认 MeetMind 第一版流程。",
+                    confidence=0.62,
+                    reason="专有名词发音可能被拆写，需要结合画面或人工确认。",
+                )
+            ] if segments else []
+
+        compact_segments = [segment.model_dump() for segment in segments[:1000]]
+        system = (
+            "你是会议语音转写校对员。找出原速转写中明显可疑、语义不通、"
+            "专有名词可能错写，或与快速转写冲突的句段。\n"
+            "置信度是你对建议文本正确性的估值，不是语音模型原生置信度。"
+            "不要为了凑数而标记；最多返回 12 项。\n"
+            "只返回 JSON：{\"candidates\":[{\"segment_index\":0,"
+            "\"suggested_text\":\"完整建议句子\",\"confidence\":0.0,"
+            "\"reason\":\"简短原因\"}]}。"
+        )
+        user = json.dumps(
+            {
+                "meeting_context": context[:4000],
+                "fast_transcript": fast_transcript[:60000],
+                "original_speed_segments": compact_segments,
+            },
+            ensure_ascii=False,
+        )
+        payload = self._json_from_content(self._chat(system, user))
+        raw_candidates = payload.get("candidates")
+        if not isinstance(raw_candidates, list):
+            return []
+        valid_indexes = {segment.index for segment in segments}
+        suggestions: list[ReviewSuggestion] = []
+        for raw in raw_candidates[:12]:
+            try:
+                suggestion = ReviewSuggestion.model_validate(raw)
+            except ValueError:
+                continue
+            if suggestion.segment_index in valid_indexes and suggestion.suggested_text.strip():
+                suggestions.append(suggestion)
+        return suggestions
+
+    def refine_review_suggestions(
+        self,
+        items: list[ReviewItem],
+        context: str = "",
+    ) -> list[ReviewSuggestion]:
+        if not items:
+            return []
+        if self.settings.mock_ai:
+            return [
+                ReviewSuggestion(
+                    segment_index=item.segment_index,
+                    suggested_text=item.suggested_text,
+                    confidence=0.94 if any("MeetMind" in text for text in item.ocr_text) else 0.64,
+                    reason=(
+                        "原速音频与画面文字相互印证。"
+                        if item.ocr_text
+                        else "画面中没有可用文字，请人工听取原声确认。"
+                    ),
+                )
+                for item in items
+            ]
+
+        system = (
+            "你是会议转写复核员。结合原速语音转写、初步建议和同一时间点的"
+            "视频 OCR 文字，给出完整句子的最终建议。\n"
+            "OCR 可能包含无关界面文字，不要强行套用。confidence 表示建议正确性的估值；"
+            "证据不足时必须低于 0.75。\n"
+            "保持 segment_index 不变，只返回 JSON：{\"candidates\":["
+            "{\"segment_index\":0,\"suggested_text\":\"完整建议句子\","
+            "\"confidence\":0.0,\"reason\":\"依据\"}]}。"
+        )
+        user = json.dumps(
+            {
+                "meeting_context": context[:4000],
+                "candidates": [
+                    {
+                        "segment_index": item.segment_index,
+                        "original_text": item.original_text,
+                        "initial_suggestion": item.suggested_text,
+                        "ocr_text": item.ocr_text,
+                    }
+                    for item in items
+                ],
+            },
+            ensure_ascii=False,
+        )
+        payload = self._json_from_content(self._chat(system, user))
+        raw_candidates = payload.get("candidates")
+        if not isinstance(raw_candidates, list):
+            return []
+        valid_indexes = {item.segment_index for item in items}
+        refined: list[ReviewSuggestion] = []
+        for raw in raw_candidates:
+            try:
+                suggestion = ReviewSuggestion.model_validate(raw)
+            except ValueError:
+                continue
+            if suggestion.segment_index in valid_indexes and suggestion.suggested_text.strip():
+                refined.append(suggestion)
+        return refined
+
     def summarize(self, transcript: str, context: str = "") -> str:
         if self.settings.mock_ai:
             return """# MeetMind 第一版评审会
@@ -171,24 +380,4 @@ class AIService:
         if context.strip():
             user_input += f"会议背景：{context.strip()[:2000]}\n"
         user_input += f"<transcript>\n{transcript}\n</transcript>"
-        payload = self._post(
-            "/v1/chat/completions",
-            json={
-                "model": self.settings.summary_model,
-                "messages": [
-                    {"role": "system", "content": instructions},
-                    {"role": "user", "content": user_input},
-                ],
-                "stream": False,
-                "temperature": 0.2,
-                "max_completion_tokens": 4096,
-                "thinking": {"type": "disabled"},
-            },
-        )
-        try:
-            content = payload["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise MiniMaxAPIError("MiniMax 文本模型没有返回可用的会议纪要") from exc
-        if not isinstance(content, str) or not content.strip():
-            raise MiniMaxAPIError("MiniMax 文本模型没有返回可用的会议纪要")
-        return content.strip()
+        return self._chat(instructions, user_input)

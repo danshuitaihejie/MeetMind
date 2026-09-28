@@ -8,6 +8,7 @@ import pytest
 
 from app.ai import AIService, MiniMaxAPIError
 from app.config import Settings
+from app.models import TranscriptSegment
 
 
 def make_service(handler: httpx.MockTransport) -> AIService:
@@ -85,3 +86,57 @@ def test_minimax_retries_temporary_asr_failure_with_full_file(tmp_path: Path) ->
     service = make_service(httpx.MockTransport(handler))
     assert service.transcribe(audio) == "重试成功"
     assert attempts == 3
+
+
+def test_minimax_detailed_transcription_returns_timestamps(tmp_path: Path) -> None:
+    audio = tmp_path / "meeting.mp3"
+    audio.write_bytes(b"fake-mp3")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read()
+        assert b"verbose_json" in body
+        assert b"sentence" in body
+        return httpx.Response(
+            200,
+            json={
+                "text": "讨论 MeetMind。",
+                "duration": 3.2,
+                "segments": [
+                    {"start": 0.2, "end": 2.8, "speaker": "1", "text": "讨论 MeetMind。"}
+                ],
+            },
+        )
+
+    service = make_service(httpx.MockTransport(handler))
+    segments = service.transcribe_detailed(audio)
+    assert segments[0].start_seconds == 0.2
+    assert segments[0].speaker == "1"
+    assert segments[0].text == "讨论 MeetMind。"
+
+
+def test_minimax_finds_review_suggestions() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        assert "原速转写" in payload["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": """```json
+{"candidates":[{"segment_index":0,"suggested_text":"MeetMind","confidence":0.72,"reason":"专有名词"}]}
+```"""
+                        }
+                    }
+                ]
+            },
+        )
+
+    service = make_service(httpx.MockTransport(handler))
+    suggestions = service.find_review_suggestions(
+        [TranscriptSegment(index=0, start_seconds=0, end_seconds=1, text="Meet Mine")],
+        "Meet Mine",
+    )
+    assert suggestions[0].suggested_text == "MeetMind"
+    assert suggestions[0].confidence == 0.72

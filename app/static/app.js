@@ -248,6 +248,170 @@ function showResult(content, text, isMinutes) {
   }
 }
 
+async function requestJSON(url, options = {}) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    let message = "请求失败";
+    try { message = (await response.json()).detail || message; }
+    catch { /* Use the generic message. */ }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+function renderReviewItem(job, item) {
+  const article = document.createElement("article");
+  article.className = `review-item ${item.confidence < 0.75 ? "needs-review" : "supported"}`;
+
+  const header = document.createElement("div");
+  header.className = "review-item-heading";
+  const time = document.createElement("strong");
+  time.textContent = `${formatDuration(item.start_seconds)} – ${formatDuration(item.end_seconds)}`;
+  const confidence = document.createElement("span");
+  confidence.textContent = item.confidence < 0.75
+    ? `请人工确认 · ${Math.round(item.confidence * 100)}%`
+    : `OCR/上下文支持 · ${Math.round(item.confidence * 100)}%`;
+  header.append(time, confidence);
+  article.appendChild(header);
+
+  if (item.frame_count) {
+    const frames = document.createElement("div");
+    frames.className = "review-frames";
+    for (let index = 0; index < item.frame_count; index += 1) {
+      const image = document.createElement("img");
+      image.loading = "lazy";
+      image.alt = `${formatDuration(item.start_seconds)} 的原始视频画面`;
+      image.src = `/api/jobs/${job.id}/review/${item.id}/frame/${index}`;
+      frames.appendChild(image);
+    }
+    article.appendChild(frames);
+  }
+
+  const audio = document.createElement("audio");
+  audio.controls = true;
+  audio.preload = "none";
+  audio.src = `/api/jobs/${job.id}/review/${item.id}/audio`;
+  article.appendChild(audio);
+
+  const original = document.createElement("p");
+  original.className = "review-original";
+  original.textContent = `原速识别：${item.original_text}`;
+  article.appendChild(original);
+
+  if (item.ocr_text.length) {
+    const ocr = document.createElement("p");
+    ocr.className = "review-ocr";
+    ocr.textContent = `画面 OCR：${item.ocr_text.join(" · ")}`;
+    article.appendChild(ocr);
+  }
+
+  const reason = document.createElement("p");
+  reason.className = "review-reason";
+  reason.textContent = item.reason;
+  article.appendChild(reason);
+
+  const label = document.createElement("label");
+  label.className = "review-correction-field";
+  const labelText = document.createElement("span");
+  labelText.textContent = "确认后的完整句子";
+  const textarea = document.createElement("textarea");
+  textarea.className = "review-correction";
+  textarea.dataset.itemId = item.id;
+  textarea.dataset.originalText = item.original_text;
+  textarea.rows = 3;
+  textarea.maxLength = 5000;
+  textarea.value = item.correction || item.suggested_text || item.original_text;
+  label.append(labelText, textarea);
+  article.appendChild(label);
+
+  const keep = document.createElement("button");
+  keep.className = "review-keep";
+  keep.type = "button";
+  keep.textContent = "保留原速识别文本";
+  keep.addEventListener("click", () => { textarea.value = item.original_text; });
+  article.appendChild(keep);
+  return article;
+}
+
+function renderReview(job, card) {
+  if (job.status !== "completed" || !job.transcript) return;
+  const panel = $(".review-panel", card);
+  const start = $(".review-start", panel);
+  const progress = $(".review-progress", panel);
+  const error = $(".review-error", panel);
+  const list = $(".review-list", panel);
+  const apply = $(".review-apply", panel);
+  const status = job.review_status || "idle";
+  panel.classList.remove("hidden");
+
+  if (["processing", "applying"].includes(status)) {
+    start.classList.add("hidden");
+    progress.classList.remove("hidden");
+    $("b", progress).style.width = `${job.review_progress || 0}%`;
+    $("span", progress).textContent = `${job.review_stage} · ${job.review_progress || 0}%`;
+  } else {
+    start.classList.toggle("hidden", ["ready", "completed"].includes(status));
+  }
+
+  if (status === "failed") {
+    error.textContent = job.review_error || "智能校对失败";
+    error.classList.remove("hidden");
+    start.textContent = "重新运行智能校对 ↻";
+  }
+
+  start.addEventListener("click", async () => {
+    start.disabled = true;
+    start.textContent = "正在启动校对…";
+    try {
+      await requestJSON(`/api/jobs/${job.id}/review`, { method: "POST" });
+      await loadJobs();
+      startPolling();
+    } catch (requestError) {
+      start.disabled = false;
+      start.textContent = "智能校对：OCR + 原声";
+      error.textContent = requestError.message;
+      error.classList.remove("hidden");
+    }
+  });
+
+  if (["ready", "completed"].includes(status)) {
+    if (!job.review_items.length) {
+      const empty = document.createElement("p");
+      empty.className = "review-empty";
+      empty.textContent = "原速音频复核完成，未发现明显需要人工确认的句段。";
+      list.appendChild(empty);
+    } else {
+      job.review_items.forEach((item) => list.appendChild(renderReviewItem(job, item)));
+      apply.classList.remove("hidden");
+      apply.textContent = status === "completed"
+        ? "更新修正并重新生成纪要 →"
+        : "应用以上修正并重新生成纪要 →";
+      apply.addEventListener("click", async () => {
+        const corrections = [...panel.querySelectorAll(".review-correction")].map((field) => ({
+          item_id: field.dataset.itemId,
+          text: field.value.trim(),
+        })).filter((item) => item.text);
+        apply.disabled = true;
+        apply.textContent = "正在应用修正…";
+        try {
+          await requestJSON(`/api/jobs/${job.id}/review/apply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ corrections }),
+          });
+          await loadJobs();
+          startPolling();
+        } catch (requestError) {
+          apply.disabled = false;
+          apply.textContent = "应用以上修正并重新生成纪要 →";
+          error.textContent = requestError.message;
+          error.classList.remove("hidden");
+        }
+      });
+    }
+  }
+}
+
 function renderJob(job) {
   const fragment = elements.template.content.cloneNode(true);
   const card = $(".job-card", fragment);
@@ -331,6 +495,7 @@ function renderJob(job) {
     $("[data-download='minutes']", card).classList.add("hidden");
     $("[data-download='audio']", card).href = `/api/jobs/${job.id}/audio`;
   }
+  renderReview(job, card);
   return fragment;
 }
 
@@ -346,7 +511,10 @@ async function loadJobs() {
     if (!response.ok) throw new Error("load failed");
     state.jobs = await response.json();
     renderJobs();
-    if (!state.jobs.some((job) => ["queued", "processing"].includes(job.status))) stopPolling();
+    if (!state.jobs.some((job) => (
+      ["queued", "processing"].includes(job.status)
+      || ["processing", "applying"].includes(job.review_status)
+    ))) stopPolling();
   } catch { /* Keep the previous list visible during a transient error. */ }
 }
 
@@ -375,5 +543,8 @@ elements.dropzone.addEventListener("drop", (event) => selectFile(event.dataTrans
 
 checkHealth();
 loadJobs().then(() => {
-  if (state.jobs.some((job) => ["queued", "processing"].includes(job.status))) startPolling();
+  if (state.jobs.some((job) => (
+    ["queued", "processing"].includes(job.status)
+    || ["processing", "applying"].includes(job.review_status)
+  ))) startPolling();
 });
