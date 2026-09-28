@@ -5,17 +5,24 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.ai import AIService
 from app.config import Settings
 from app.media import MediaProcessor
-from app.models import HealthResponse, Job, JobStatus, ReviewStatus, ReviewSubmission
+from app.models import (
+    HealthResponse,
+    Job,
+    JobStatus,
+    ManualReviewMatch,
+    ReviewStatus,
+    ReviewSubmission,
+)
 from app.ocr import OCRService
 from app.pipeline import process_job
-from app.review import apply_review_corrections, review_job
+from app.review import apply_review_corrections, review_job, search_review_term
 from app.store import JobStore
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -155,6 +162,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_stage="",
             review_progress=0,
             review_items=[],
+            review_manual_corrections=[],
             review_error=None,
         )
         background_tasks.add_task(process_job, job_id, source_files[0], store, media, ai)
@@ -179,6 +187,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_stage="准备智能校对",
             review_progress=0,
             review_items=[],
+            review_manual_corrections=[],
             review_error=None,
         )
         background_tasks.add_task(
@@ -191,6 +200,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ocr,
         )
         return started
+
+    @app.get(
+        "/api/jobs/{job_id}/review/search",
+        response_model=list[ManualReviewMatch],
+    )
+    def search_review(
+        job_id: str,
+        term: Annotated[str, Query(min_length=1, max_length=100)],
+    ) -> list[ManualReviewMatch]:
+        job = store.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if job.review_status not in {ReviewStatus.ready, ReviewStatus.completed}:
+            raise HTTPException(status_code=409, detail="请先运行智能校对以生成词级时间轴")
+        cleaned_term = term.strip()
+        if not cleaned_term:
+            raise HTTPException(status_code=422, detail="请输入要查找的原词")
+        try:
+            return search_review_term(job_id, cleaned_term, store)
+        except (OSError, ValueError):
+            raise HTTPException(
+                status_code=409,
+                detail="词级时间轴不可用，请重新运行智能校对",
+            ) from None
 
     @app.post("/api/jobs/{job_id}/review/apply", response_model=Job, status_code=202)
     def apply_review(
@@ -218,6 +251,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             apply_review_corrections,
             job_id,
             submission.corrections,
+            submission.manual_corrections,
             store,
             ai,
         )

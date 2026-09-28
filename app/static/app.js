@@ -259,6 +259,29 @@ async function requestJSON(url, options = {}) {
   return response.json();
 }
 
+function appendHighlightedContext(container, contextText, originalTerm) {
+  const termIndex = contextText.indexOf(originalTerm);
+  if (termIndex < 0) {
+    container.appendChild(document.createTextNode(contextText.slice(0, 60)));
+    return;
+  }
+  const contextStart = Math.max(0, termIndex - 24);
+  const contextEnd = Math.min(
+    contextText.length,
+    termIndex + originalTerm.length + 24,
+  );
+  const before = `${contextStart ? "…" : ""}${contextText.slice(contextStart, termIndex)}`;
+  const after = `${contextText.slice(
+    termIndex + originalTerm.length,
+    contextEnd,
+  )}${contextEnd < contextText.length ? "…" : ""}`;
+  container.appendChild(document.createTextNode(before));
+  const mark = document.createElement("mark");
+  mark.textContent = originalTerm;
+  container.appendChild(mark);
+  container.appendChild(document.createTextNode(after));
+}
+
 function renderReviewItem(job, item) {
   const article = document.createElement("article");
   article.className = `review-item ${item.confidence < 0.75 ? "needs-review" : "supported"}`;
@@ -298,26 +321,7 @@ function renderReviewItem(job, item) {
   const prefix = document.createElement("span");
   prefix.textContent = "附近上下文：";
   original.appendChild(prefix);
-  const termIndex = item.context_text.indexOf(item.original_term);
-  if (termIndex < 0) {
-    original.appendChild(document.createTextNode(item.context_text.slice(0, 60)));
-  } else {
-    const contextStart = Math.max(0, termIndex - 24);
-    const contextEnd = Math.min(
-      item.context_text.length,
-      termIndex + item.original_term.length + 24,
-    );
-    const before = `${contextStart ? "…" : ""}${item.context_text.slice(contextStart, termIndex)}`;
-    const after = `${item.context_text.slice(
-      termIndex + item.original_term.length,
-      contextEnd,
-    )}${contextEnd < item.context_text.length ? "…" : ""}`;
-    original.appendChild(document.createTextNode(before));
-    const mark = document.createElement("mark");
-    mark.textContent = item.original_term;
-    original.appendChild(mark);
-    original.appendChild(document.createTextNode(after));
-  }
+  appendHighlightedContext(original, item.context_text, item.original_term);
   article.appendChild(original);
 
   if (item.ocr_text.length) {
@@ -353,6 +357,128 @@ function renderReviewItem(job, item) {
   keep.addEventListener("click", () => { input.value = item.original_term; });
   article.appendChild(keep);
   return article;
+}
+
+function addManualPending(container, correction, apply, contextText = "") {
+  const selector = [
+    `.manual-pending-item[data-segment-index="${correction.segment_index}"]`,
+    `[data-term-start="${correction.term_start}"]`,
+  ].join("");
+  const existing = container.querySelector(selector);
+  if (existing) {
+    $("input", existing).value = correction.replacement;
+    return;
+  }
+
+  const row = document.createElement("div");
+  row.className = "manual-pending-item";
+  row.dataset.segmentIndex = correction.segment_index;
+  row.dataset.termStart = correction.term_start;
+  row.dataset.originalTerm = correction.original_term;
+
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = `${correction.original_term} →`;
+  const replacement = document.createElement("input");
+  replacement.type = "text";
+  replacement.maxLength = 100;
+  replacement.value = correction.replacement;
+  replacement.setAttribute("aria-label", `把 ${correction.original_term} 修改为`);
+  copy.append(title, replacement);
+  if (contextText) {
+    const context = document.createElement("p");
+    appendHighlightedContext(context, contextText, correction.original_term);
+    copy.appendChild(context);
+  }
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "移除";
+  remove.addEventListener("click", () => {
+    row.remove();
+    const hasAICorrections = Boolean(
+      container.closest(".review-panel").querySelector(".review-correction"),
+    );
+    apply.classList.toggle("hidden", !container.children.length && !hasAICorrections);
+  });
+  row.append(copy, remove);
+  container.appendChild(row);
+  apply.classList.remove("hidden");
+}
+
+function setupManualReview(job, panel, apply) {
+  const section = $(".manual-review", panel);
+  const form = $(".manual-review-form", section);
+  const original = $(".manual-original", form);
+  const replacement = $(".manual-replacement", form);
+  const error = $(".manual-review-error", section);
+  const results = $(".manual-review-results", section);
+  const pending = $(".manual-review-pending", section);
+  section.classList.remove("hidden");
+
+  (job.review_manual_corrections || []).forEach((correction) => {
+    addManualPending(pending, correction, apply);
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const originalTerm = original.value.trim();
+    const replacementTerm = replacement.value.trim();
+    error.classList.add("hidden");
+    results.replaceChildren();
+    if (!originalTerm || !replacementTerm) {
+      error.textContent = "请同时填写原词和正确写法";
+      error.classList.remove("hidden");
+      return;
+    }
+
+    const button = $("button[type='submit']", form);
+    button.disabled = true;
+    button.textContent = "正在查找…";
+    try {
+      const matches = await requestJSON(
+        `/api/jobs/${job.id}/review/search?term=${encodeURIComponent(originalTerm)}`,
+      );
+      if (!matches.length) {
+        error.textContent = "词级转写中没有找到这个原词，请检查文字是否完全一致";
+        error.classList.remove("hidden");
+        return;
+      }
+      matches.forEach((match) => {
+        const row = document.createElement("button");
+        row.className = "manual-review-match";
+        row.type = "button";
+        const time = document.createElement("strong");
+        time.textContent = `${formatDuration(match.start_seconds)} 选择此处`;
+        const context = document.createElement("span");
+        appendHighlightedContext(context, match.context_text, match.original_term);
+        row.append(time, context);
+        row.addEventListener("click", () => {
+          addManualPending(
+            pending,
+            {
+              segment_index: match.segment_index,
+              term_start: match.term_start,
+              original_term: match.original_term,
+              replacement: replacementTerm,
+            },
+            apply,
+            match.context_text,
+          );
+          original.value = "";
+          replacement.value = "";
+          results.replaceChildren();
+        });
+        results.appendChild(row);
+      });
+    } catch (requestError) {
+      error.textContent = requestError.message;
+      error.classList.remove("hidden");
+    } finally {
+      button.disabled = false;
+      button.textContent = "查找位置";
+    }
+  });
 }
 
 function renderReview(job, card) {
@@ -405,32 +531,42 @@ function renderReview(job, card) {
     } else {
       job.review_items.forEach((item) => list.appendChild(renderReviewItem(job, item)));
       apply.classList.remove("hidden");
-      apply.textContent = status === "completed"
-        ? "更新修正并重新生成纪要 →"
-        : "应用以上修正并重新生成纪要 →";
-      apply.addEventListener("click", async () => {
-        const corrections = [...panel.querySelectorAll(".review-correction")].map((field) => ({
-          item_id: field.dataset.itemId,
-          replacement: field.value.trim(),
-        })).filter((item) => item.replacement);
-        apply.disabled = true;
-        apply.textContent = "正在应用修正…";
-        try {
-          await requestJSON(`/api/jobs/${job.id}/review/apply`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ corrections }),
-          });
-          await loadJobs();
-          startPolling();
-        } catch (requestError) {
-          apply.disabled = false;
-          apply.textContent = "应用以上修正并重新生成纪要 →";
-          error.textContent = requestError.message;
-          error.classList.remove("hidden");
-        }
-      });
     }
+    setupManualReview(job, panel, apply);
+    apply.textContent = status === "completed"
+      ? "更新修正并重新生成纪要 →"
+      : "应用以上修正并重新生成纪要 →";
+    apply.addEventListener("click", async () => {
+      const corrections = [...panel.querySelectorAll(".review-correction")].map((field) => ({
+        item_id: field.dataset.itemId,
+        replacement: field.value.trim(),
+      })).filter((item) => item.replacement);
+      const manualCorrections = [...panel.querySelectorAll(".manual-pending-item")].map((row) => ({
+        segment_index: Number(row.dataset.segmentIndex),
+        term_start: Number(row.dataset.termStart),
+        original_term: row.dataset.originalTerm,
+        replacement: $("input", row).value.trim(),
+      })).filter((item) => item.replacement);
+      apply.disabled = true;
+      apply.textContent = "正在应用修正…";
+      try {
+        await requestJSON(`/api/jobs/${job.id}/review/apply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            corrections,
+            manual_corrections: manualCorrections,
+          }),
+        });
+        await loadJobs();
+        startPolling();
+      } catch (requestError) {
+        apply.disabled = false;
+        apply.textContent = "应用以上修正并重新生成纪要 →";
+        error.textContent = requestError.message;
+        error.classList.remove("hidden");
+      }
+    });
   }
 }
 

@@ -68,8 +68,28 @@ class ReviewCorrection(BaseModel):
     replacement: str = Field(min_length=1, max_length=100)
 
 
+class ManualReviewCorrection(BaseModel):
+    segment_index: int = Field(ge=0)
+    term_start: int = Field(ge=0)
+    original_term: str = Field(min_length=1, max_length=100)
+    replacement: str = Field(min_length=1, max_length=100)
+
+
+class ManualReviewMatch(BaseModel):
+    segment_index: int = Field(ge=0)
+    term_start: int = Field(ge=0)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+    context_text: str
+    original_term: str
+
+
 class ReviewSubmission(BaseModel):
     corrections: list[ReviewCorrection] = Field(max_length=20)
+    manual_corrections: list[ManualReviewCorrection] = Field(
+        default_factory=list,
+        max_length=20,
+    )
 
 
 class Job(BaseModel):
@@ -93,6 +113,7 @@ class Job(BaseModel):
     review_stage: str = ""
     review_progress: int = Field(default=0, ge=0, le=100)
     review_items: list[ReviewItem] = Field(default_factory=list)
+    review_manual_corrections: list[ManualReviewCorrection] = Field(default_factory=list)
     review_error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -116,6 +137,7 @@ class Job(BaseModel):
             review_stage="需重新运行词级校对",
             review_progress=0,
             review_items=[],
+            review_manual_corrections=[],
             review_error=None,
         )
         return migrated

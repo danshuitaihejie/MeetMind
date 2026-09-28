@@ -198,6 +198,30 @@ main { max-width: 1240px; margin: 0 auto; padding: 0 32px 100px; }
 .review-correction-field input { width: min(100%, 360px); padding: 10px 11px; border: 1px solid var(--line); background: var(--white); color: var(--ink); font: 12px/1.6 ui-monospace, "PingFang SC", monospace; }
 .review-correction-field input:focus { border-color: var(--accent); outline: 0; }
 .review-keep { margin-top: 8px; padding: 0 0 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
+.manual-review { margin-top: 18px; padding: 17px; border: 1px dashed var(--line); background: var(--white); }
+.manual-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.manual-review-heading strong { font-size: 12px; }
+.manual-review-heading span { color: var(--accent); font: 700 9px ui-monospace, monospace; letter-spacing: .08em; }
+.manual-review > p { margin: 7px 0 0; color: var(--muted); font-size: 10px; }
+.manual-review-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-top: 13px; align-items: end; }
+.manual-review-form label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 9px; }
+.manual-review-form input, .manual-pending-item input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); background: #f8f5ee; color: var(--ink); font: 12px/1.5 ui-monospace, "PingFang SC", monospace; }
+.manual-review-form input:focus, .manual-pending-item input:focus { border-color: var(--accent); outline: 0; }
+.manual-review-form button { padding: 10px 13px; border: 0; background: var(--ink); color: var(--white); cursor: pointer; font-size: 10px; font-weight: 700; }
+.manual-review-form button:disabled { cursor: wait; opacity: .55; }
+.manual-review-error { color: #ad2e14 !important; }
+.manual-review-results { display: grid; gap: 6px; margin-top: 10px; }
+.manual-review-match { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--line); background: #f8f5ee; color: var(--muted); text-align: left; cursor: pointer; }
+.manual-review-match:hover { border-color: var(--accent); }
+.manual-review-match strong { color: var(--accent-dark); font: 700 9px ui-monospace, monospace; }
+.manual-review-match span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.manual-review-match mark, .manual-pending-item mark { background: #ffe6a7; color: #7a2e14; }
+.manual-review-pending { display: grid; gap: 7px; margin-top: 10px; }
+.manual-pending-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px; border-left: 3px solid var(--green); background: #edf5ef; }
+.manual-pending-item > div { display: grid; grid-template-columns: auto minmax(100px, 240px); gap: 8px; align-items: center; }
+.manual-pending-item strong { font-size: 10px; }
+.manual-pending-item p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 9px; }
+.manual-pending-item > button { padding: 0 0 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .review-apply { width: 100%; margin-top: 14px; padding: 14px 18px; background: var(--accent); }
 .review-start:disabled, .review-apply:disabled { cursor: wait; opacity: .55; }
 .review-empty { margin: 0; padding: 16px; background: #edf5ef; color: var(--green); font-size: 11px; }
@@ -221,6 +245,7 @@ footer span { color: var(--ink); font-weight: 800; } footer p { margin: 0; }
   .hero h1 { font-size: 48px; }
   .hero-copy { font-size: 15px; }
   .settings-grid { grid-template-columns: 1fr; }
+  .manual-review-form { grid-template-columns: 1fr; }
   .job-summary { grid-template-columns: 40px minmax(0, 1fr); }
   .job-state { grid-column: 2; }
   .job-file-icon { width: 40px; height: 40px; }

@@ -8,6 +8,8 @@ from pathlib import Path
 from app.ai import AIService
 from app.media import MediaProcessor
 from app.models import (
+    ManualReviewCorrection,
+    ManualReviewMatch,
     ReviewCorrection,
     ReviewItem,
     ReviewStatus,
@@ -50,23 +52,70 @@ def _build_timed_transcript(segments: list[TranscriptSegment]) -> str:
     return "\n".join(lines)
 
 
-def _term_window(segment: TranscriptSegment, term: str) -> tuple[float, float]:
+def _term_window(
+    segment: TranscriptSegment,
+    term: str,
+    occurrence: int = 0,
+) -> tuple[float, float]:
     """Locate a suspicious term within word-level ASR tokens when possible."""
     normalized_term = "".join(term.split())
     if not normalized_term or not segment.tokens:
         return segment.start_seconds, segment.end_seconds
+    matched_occurrences = 0
     for start_index in range(len(segment.tokens)):
         combined = ""
         for end_index in range(start_index, len(segment.tokens)):
             combined += "".join(segment.tokens[end_index].text.split())
             if combined == normalized_term:
-                return (
-                    segment.tokens[start_index].start_seconds,
-                    segment.tokens[end_index].end_seconds,
-                )
+                if matched_occurrences == occurrence:
+                    return (
+                        segment.tokens[start_index].start_seconds,
+                        segment.tokens[end_index].end_seconds,
+                    )
+                matched_occurrences += 1
+                break
             if not normalized_term.startswith(combined):
                 break
     return segment.start_seconds, segment.end_seconds
+
+
+def _find_occurrences(text: str, term: str) -> list[int]:
+    if not term:
+        return []
+    starts: list[int] = []
+    cursor = 0
+    while True:
+        index = text.find(term, cursor)
+        if index < 0:
+            return starts
+        starts.append(index)
+        cursor = index + len(term)
+
+
+def search_review_term(
+    job_id: str,
+    term: str,
+    store: JobStore,
+) -> list[ManualReviewMatch]:
+    segments_path = store.job_dir(job_id) / "review" / "segments.json"
+    segments = _load_segments(segments_path)
+    matches: list[ManualReviewMatch] = []
+    for segment in segments:
+        for occurrence, term_start in enumerate(_find_occurrences(segment.text, term)):
+            start_seconds, end_seconds = _term_window(segment, term, occurrence)
+            matches.append(
+                ManualReviewMatch(
+                    segment_index=segment.index,
+                    term_start=term_start,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
+                    context_text=segment.text,
+                    original_term=term,
+                )
+            )
+            if len(matches) >= 30:
+                return matches
+    return matches
 
 
 def review_job(
@@ -232,6 +281,7 @@ def review_job(
 def apply_review_corrections(
     job_id: str,
     corrections: list[ReviewCorrection],
+    manual_corrections: list[ManualReviewCorrection],
     store: JobStore,
     ai: AIService,
 ) -> None:
@@ -250,6 +300,7 @@ def apply_review_corrections(
         segments = _load_segments(job_dir / "review" / "segments.json")
         items_by_id = {item.id: item for item in job.review_items}
         segments_by_index = {segment.index: segment for segment in segments}
+        edits: dict[tuple[int, int, int], str] = {}
 
         for correction in corrections:
             item = items_by_id.get(correction.item_id)
@@ -260,8 +311,30 @@ def apply_review_corrections(
                 continue
             segment = segments_by_index.get(item.segment_index)
             if segment and item.original_term in segment.text:
-                segment.text = segment.text.replace(item.original_term, replacement, 1)
+                term_start = segment.text.index(item.original_term)
+                term_end = term_start + len(item.original_term)
+                edits[(segment.index, term_start, term_end)] = replacement
                 item.correction_term = replacement
+
+        for correction in manual_corrections:
+            segment = segments_by_index.get(correction.segment_index)
+            term_end = correction.term_start + len(correction.original_term)
+            if (
+                not segment
+                or segment.text[correction.term_start:term_end] != correction.original_term
+            ):
+                raise ValueError("手动校对位置已失效，请重新搜索该词")
+            edits[(segment.index, correction.term_start, term_end)] = correction.replacement
+
+        for (segment_index, term_start, term_end), replacement in sorted(
+            edits.items(),
+            key=lambda entry: (entry[0][0], entry[0][1]),
+            reverse=True,
+        ):
+            segment = segments_by_index[segment_index]
+            segment.text = (
+                segment.text[:term_start] + replacement + segment.text[term_end:]
+            )
 
         original_transcript = job_dir / "transcript.original.txt"
         transcript_path = job_dir / "transcript.txt"
@@ -277,6 +350,7 @@ def apply_review_corrections(
             review_progress=68,
             transcript=transcript,
             review_items=list(items_by_id.values()),
+            review_manual_corrections=manual_corrections,
         )
         minutes = ai.summarize(transcript, job.context)
         (job_dir / "minutes.md").write_text(minutes, encoding="utf-8")
@@ -287,6 +361,7 @@ def apply_review_corrections(
             review_stage="校对已应用",
             review_progress=100,
             review_items=list(items_by_id.values()),
+            review_manual_corrections=manual_corrections,
             review_error=None,
         )
     except Exception as exc:

@@ -184,6 +184,27 @@
           <div class="review-progress hidden"><i><b></b></i><span></span></div>
           <p class="review-error hidden"></p>
           <div class="review-list"></div>
+          <section class="manual-review hidden">
+            <div class="manual-review-heading">
+              <strong>AI 没标出来？手动修正遗漏词</strong>
+              <span>不限置信度</span>
+            </div>
+            <p>输入转写中的原词和正确写法，再从短上下文中选择准确位置。</p>
+            <form class="manual-review-form">
+              <label>
+                <span>原词 / 短语</span>
+                <input class="manual-original" type="text" maxlength="100" autocomplete="off">
+              </label>
+              <label>
+                <span>修改为</span>
+                <input class="manual-replacement" type="text" maxlength="100" autocomplete="off">
+              </label>
+              <button type="submit">查找位置</button>
+            </form>
+            <p class="manual-review-error hidden"></p>
+            <div class="manual-review-results"></div>
+            <div class="manual-review-pending"></div>
+          </section>
           <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
         </div>
       </article>

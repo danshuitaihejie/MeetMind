@@ -141,12 +141,29 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
         assert item["end_seconds"] == 0.58
         assert client.get(f"/api/jobs/{job_id}/review/{item['id']}/audio").status_code == 200
 
+        manual_matches = client.get(
+            f"/api/jobs/{job_id}/review/search",
+            params={"term": "第一版"},
+        )
+        assert manual_matches.status_code == 200
+        match = manual_matches.json()[0]
+        assert match["context_text"] == item["context_text"]
+        assert match["original_term"] == "第一版"
+
         apply_response = client.post(
             f"/api/jobs/{job_id}/review/apply",
             json={
                 "corrections": [
                     {"item_id": item["id"], "replacement": "MeetMind"}
-                ]
+                ],
+                "manual_corrections": [
+                    {
+                        "segment_index": match["segment_index"],
+                        "term_start": match["term_start"],
+                        "original_term": match["original_term"],
+                        "replacement": "首版",
+                    }
+                ],
             },
         )
         assert apply_response.status_code == 202
@@ -155,4 +172,6 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
     assert corrected["review_status"] == "completed"
     assert "MeetMind" in corrected["transcript"]
     assert "Meet Mine" not in corrected["transcript"]
+    assert "首版流程" in corrected["transcript"]
     assert corrected["review_items"][0]["correction_term"] == "MeetMind"
+    assert corrected["review_manual_corrections"][0]["replacement"] == "首版"
