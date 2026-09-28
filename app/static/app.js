@@ -295,7 +295,29 @@ function renderReviewItem(job, item) {
 
   const original = document.createElement("p");
   original.className = "review-original";
-  original.textContent = `原速识别：${item.original_text}`;
+  const prefix = document.createElement("span");
+  prefix.textContent = "附近上下文：";
+  original.appendChild(prefix);
+  const termIndex = item.context_text.indexOf(item.original_term);
+  if (termIndex < 0) {
+    original.appendChild(document.createTextNode(item.context_text.slice(0, 60)));
+  } else {
+    const contextStart = Math.max(0, termIndex - 24);
+    const contextEnd = Math.min(
+      item.context_text.length,
+      termIndex + item.original_term.length + 24,
+    );
+    const before = `${contextStart ? "…" : ""}${item.context_text.slice(contextStart, termIndex)}`;
+    const after = `${item.context_text.slice(
+      termIndex + item.original_term.length,
+      contextEnd,
+    )}${contextEnd < item.context_text.length ? "…" : ""}`;
+    original.appendChild(document.createTextNode(before));
+    const mark = document.createElement("mark");
+    mark.textContent = item.original_term;
+    original.appendChild(mark);
+    original.appendChild(document.createTextNode(after));
+  }
   article.appendChild(original);
 
   if (item.ocr_text.length) {
@@ -313,22 +335,22 @@ function renderReviewItem(job, item) {
   const label = document.createElement("label");
   label.className = "review-correction-field";
   const labelText = document.createElement("span");
-  labelText.textContent = "确认后的完整句子";
-  const textarea = document.createElement("textarea");
-  textarea.className = "review-correction";
-  textarea.dataset.itemId = item.id;
-  textarea.dataset.originalText = item.original_text;
-  textarea.rows = 3;
-  textarea.maxLength = 5000;
-  textarea.value = item.correction || item.suggested_text || item.original_text;
-  label.append(labelText, textarea);
+  labelText.textContent = `只确认这个词（原识别：${item.original_term}）`;
+  const input = document.createElement("input");
+  input.className = "review-correction";
+  input.dataset.itemId = item.id;
+  input.type = "text";
+  input.maxLength = 100;
+  input.autocomplete = "off";
+  input.value = item.correction_term || item.suggested_term || item.original_term;
+  label.append(labelText, input);
   article.appendChild(label);
 
   const keep = document.createElement("button");
   keep.className = "review-keep";
   keep.type = "button";
-  keep.textContent = "保留原速识别文本";
-  keep.addEventListener("click", () => { textarea.value = item.original_text; });
+  keep.textContent = "保留原词";
+  keep.addEventListener("click", () => { input.value = item.original_term; });
   article.appendChild(keep);
   return article;
 }
@@ -378,7 +400,7 @@ function renderReview(job, card) {
     if (!job.review_items.length) {
       const empty = document.createElement("p");
       empty.className = "review-empty";
-      empty.textContent = "原速音频复核完成，未发现明显需要人工确认的句段。";
+      empty.textContent = "原速音频复核完成，未发现明显需要人工确认的词。";
       list.appendChild(empty);
     } else {
       job.review_items.forEach((item) => list.appendChild(renderReviewItem(job, item)));
@@ -389,8 +411,8 @@ function renderReview(job, card) {
       apply.addEventListener("click", async () => {
         const corrections = [...panel.querySelectorAll(".review-correction")].map((field) => ({
           item_id: field.dataset.itemId,
-          text: field.value.trim(),
-        })).filter((item) => item.text);
+          replacement: field.value.trim(),
+        })).filter((item) => item.replacement);
         apply.disabled = true;
         apply.textContent = "正在应用修正…";
         try {

@@ -95,14 +95,17 @@ def test_minimax_detailed_transcription_returns_timestamps(tmp_path: Path) -> No
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.read()
         assert b"verbose_json" in body
-        assert b"sentence" in body
+        assert b"word" in body
         return httpx.Response(
             200,
             json={
                 "text": "讨论 MeetMind。",
                 "duration": 3.2,
                 "segments": [
-                    {"start": 0.2, "end": 2.8, "speaker": "1", "text": "讨论 MeetMind。"}
+                    {"start": 0.2, "end": 0.8, "speaker": "1", "text": "讨论"},
+                    {"start": 0.8, "end": 1.4, "speaker": "1", "text": "Meet"},
+                    {"start": 1.4, "end": 2.4, "speaker": "1", "text": "Mind"},
+                    {"start": 2.4, "end": 2.8, "speaker": "1", "text": "。"},
                 ],
             },
         )
@@ -111,7 +114,9 @@ def test_minimax_detailed_transcription_returns_timestamps(tmp_path: Path) -> No
     segments = service.transcribe_detailed(audio)
     assert segments[0].start_seconds == 0.2
     assert segments[0].speaker == "1"
-    assert segments[0].text == "讨论 MeetMind。"
+    assert segments[0].text == "讨论Meet Mind。"
+    assert len(segments[0].tokens) == 4
+    assert segments[0].tokens[1].text == "Meet"
 
 
 def test_minimax_finds_review_suggestions() -> None:
@@ -125,7 +130,8 @@ def test_minimax_finds_review_suggestions() -> None:
                     {
                         "message": {
                             "content": """```json
-{"candidates":[{"segment_index":0,"suggested_text":"MeetMind","confidence":0.72,"reason":"专有名词"}]}
+{"candidates":[{"segment_index":0,"original_term":"Meet Mine",
+"suggested_term":"MeetMind","confidence":0.72,"reason":"专有名词"}]}
 ```"""
                         }
                     }
@@ -138,5 +144,6 @@ def test_minimax_finds_review_suggestions() -> None:
         [TranscriptSegment(index=0, start_seconds=0, end_seconds=1, text="Meet Mine")],
         "Meet Mine",
     )
-    assert suggestions[0].suggested_text == "MeetMind"
+    assert suggestions[0].original_term == "Meet Mine"
+    assert suggestions[0].suggested_term == "MeetMind"
     assert suggestions[0].confidence == 0.72

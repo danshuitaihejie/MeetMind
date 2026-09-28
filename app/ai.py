@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
-from app.models import ReviewItem, ReviewSuggestion, TranscriptSegment
+from app.models import ReviewItem, ReviewSuggestion, TranscriptSegment, TranscriptToken
 
 
 class AIConfigurationError(RuntimeError):
@@ -139,6 +139,32 @@ class AIService:
     def transcribe_detailed(self, audio_path: Path) -> list[TranscriptSegment]:
         """Transcribe original-speed audio with timestamps for optional review."""
         if self.settings.mock_ai:
+            tokens = [
+                TranscriptToken(
+                    start_seconds=0,
+                    end_seconds=0.25,
+                    speaker="1",
+                    text="主持人：今天确认",
+                ),
+                TranscriptToken(
+                    start_seconds=0.25,
+                    end_seconds=0.42,
+                    speaker="1",
+                    text="Meet",
+                ),
+                TranscriptToken(
+                    start_seconds=0.42,
+                    end_seconds=0.58,
+                    speaker="1",
+                    text="Mine",
+                ),
+                TranscriptToken(
+                    start_seconds=0.58,
+                    end_seconds=0.8,
+                    speaker="1",
+                    text="第一版流程。",
+                ),
+            ]
             return [
                 TranscriptSegment(
                     index=0,
@@ -146,6 +172,7 @@ class AIService:
                     end_seconds=0.8,
                     speaker="1",
                     text="主持人：今天确认 Meet Mine 第一版流程。",
+                    tokens=tokens,
                 )
             ]
 
@@ -156,7 +183,7 @@ class AIService:
                 data={
                     "model": self.settings.transcription_model,
                     "response_format": "verbose_json",
-                    "timestamp_level": "sentence",
+                    "timestamp_level": "word",
                     "stream": "false",
                 },
                 files={"file": (audio_path.name, audio_file, media_type)},
@@ -166,7 +193,7 @@ class AIService:
         if not isinstance(raw_segments, list):
             raise MiniMaxAPIError("MiniMax ASR 没有返回句段时间戳")
 
-        segments: list[TranscriptSegment] = []
+        tokens: list[TranscriptToken] = []
         for raw in raw_segments:
             if not isinstance(raw, dict):
                 continue
@@ -178,17 +205,73 @@ class AIService:
             if not isinstance(start, int | float) or not isinstance(end, int | float):
                 continue
             speaker = raw.get("speaker")
-            segments.append(
-                TranscriptSegment(
-                    index=len(segments),
+            tokens.append(
+                TranscriptToken(
                     start_seconds=max(0, float(start)),
                     end_seconds=max(float(start), float(end)),
                     text=text.strip(),
                     speaker=str(speaker) if speaker is not None else None,
                 )
             )
-        if not segments:
-            raise MiniMaxAPIError("MiniMax ASR 没有返回可用的句段")
+        if not tokens:
+            raise MiniMaxAPIError("MiniMax ASR 没有返回可用的词级时间戳")
+        return self._group_tokens(tokens)
+
+    @staticmethod
+    def _join_token_text(current: str, token: str) -> str:
+        if not current:
+            return token
+        if token[0] in "，。！？；：、,.!?;:)]}）】》":
+            return current + token
+        if current[-1].isascii() and current[-1].isalnum() and token[0].isascii():
+            return f"{current} {token}"
+        return current + token
+
+    @classmethod
+    def _group_tokens(cls, tokens: list[TranscriptToken]) -> list[TranscriptSegment]:
+        segments: list[TranscriptSegment] = []
+        current: list[TranscriptToken] = []
+        current_text = ""
+
+        def flush() -> None:
+            nonlocal current, current_text
+            if not current:
+                return
+            segments.append(
+                TranscriptSegment(
+                    index=len(segments),
+                    start_seconds=current[0].start_seconds,
+                    end_seconds=current[-1].end_seconds,
+                    text=current_text,
+                    speaker=current[0].speaker,
+                    tokens=current,
+                )
+            )
+            current = []
+            current_text = ""
+
+        for token in tokens:
+            speaker_changed = bool(
+                current
+                and current[0].speaker
+                and token.speaker
+                and current[0].speaker != token.speaker
+            )
+            long_gap = bool(current and token.start_seconds - current[-1].end_seconds > 1.2)
+            too_long = bool(
+                current
+                and (
+                    token.end_seconds - current[0].start_seconds > 20
+                    or len(current_text) > 160
+                )
+            )
+            if speaker_changed or long_gap or too_long:
+                flush()
+            current.append(token)
+            current_text = cls._join_token_text(current_text, token.text)
+            if token.text.endswith(("。", "！", "？", ".", "!", "?", ";", "；")):
+                flush()
+        flush()
         return segments
 
     @staticmethod
@@ -243,21 +326,32 @@ class AIService:
             return [
                 ReviewSuggestion(
                     segment_index=0,
-                    suggested_text="主持人：今天确认 MeetMind 第一版流程。",
+                    original_term="Meet Mine",
+                    suggested_term="MeetMind",
                     confidence=0.62,
                     reason="专有名词发音可能被拆写，需要结合画面或人工确认。",
                 )
             ] if segments else []
 
-        compact_segments = [segment.model_dump() for segment in segments[:1000]]
+        compact_segments = [
+            {
+                "index": segment.index,
+                "start_seconds": segment.start_seconds,
+                "end_seconds": segment.end_seconds,
+                "speaker": segment.speaker,
+                "text": segment.text,
+            }
+            for segment in segments[:1000]
+        ]
         system = (
             "你是会议语音转写校对员。找出原速转写中明显可疑、语义不通、"
             "专有名词可能错写，或与快速转写冲突的句段。\n"
             "置信度是你对建议文本正确性的估值，不是语音模型原生置信度。"
             "不要为了凑数而标记；最多返回 12 项。\n"
-            "只返回 JSON：{\"candidates\":[{\"segment_index\":0,"
-            "\"suggested_text\":\"完整建议句子\",\"confidence\":0.0,"
-            "\"reason\":\"简短原因\"}]}。"
+            "每项只指出一个需要确认的词或短语，不要返回整句；original_term 必须原样出现在"
+            "对应句段里。只返回 JSON：{\"candidates\":[{\"segment_index\":0,"
+            "\"original_term\":\"疑似词\",\"suggested_term\":\"建议词\","
+            "\"confidence\":0.0,\"reason\":\"简短原因\"}]}。"
         )
         user = json.dumps(
             {
@@ -271,14 +365,17 @@ class AIService:
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return []
-        valid_indexes = {segment.index for segment in segments}
         suggestions: list[ReviewSuggestion] = []
         for raw in raw_candidates[:12]:
             try:
                 suggestion = ReviewSuggestion.model_validate(raw)
             except ValueError:
                 continue
-            if suggestion.segment_index in valid_indexes and suggestion.suggested_text.strip():
+            segment = next(
+                (item for item in segments if item.index == suggestion.segment_index),
+                None,
+            )
+            if segment and suggestion.original_term.strip() in segment.text:
                 suggestions.append(suggestion)
         return suggestions
 
@@ -293,7 +390,8 @@ class AIService:
             return [
                 ReviewSuggestion(
                     segment_index=item.segment_index,
-                    suggested_text=item.suggested_text,
+                    original_term=item.original_term,
+                    suggested_term=item.suggested_term,
                     confidence=0.94 if any("MeetMind" in text for text in item.ocr_text) else 0.64,
                     reason=(
                         "原速音频与画面文字相互印证。"
@@ -306,12 +404,13 @@ class AIService:
 
         system = (
             "你是会议转写复核员。结合原速语音转写、初步建议和同一时间点的"
-            "视频 OCR 文字，给出完整句子的最终建议。\n"
+            "视频 OCR 文字，只给出疑似词或短语的最终建议，不要改写整句。\n"
             "OCR 可能包含无关界面文字，不要强行套用。confidence 表示建议正确性的估值；"
             "证据不足时必须低于 0.75。\n"
             "保持 segment_index 不变，只返回 JSON：{\"candidates\":["
-            "{\"segment_index\":0,\"suggested_text\":\"完整建议句子\","
-            "\"confidence\":0.0,\"reason\":\"依据\"}]}。"
+            "{\"segment_index\":0,\"original_term\":\"疑似词\","
+            "\"suggested_term\":\"建议词\",\"confidence\":0.0,"
+            "\"reason\":\"依据\"}]}。"
         )
         user = json.dumps(
             {
@@ -319,8 +418,9 @@ class AIService:
                 "candidates": [
                     {
                         "segment_index": item.segment_index,
-                        "original_text": item.original_text,
-                        "initial_suggestion": item.suggested_text,
+                        "context_text": item.context_text,
+                        "original_term": item.original_term,
+                        "initial_suggestion": item.suggested_term,
                         "ocr_text": item.ocr_text,
                     }
                     for item in items
@@ -332,14 +432,20 @@ class AIService:
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return []
-        valid_indexes = {item.segment_index for item in items}
+        valid_candidates = {
+            (item.segment_index, item.original_term)
+            for item in items
+        }
         refined: list[ReviewSuggestion] = []
         for raw in raw_candidates:
             try:
                 suggestion = ReviewSuggestion.model_validate(raw)
             except ValueError:
                 continue
-            if suggestion.segment_index in valid_indexes and suggestion.suggested_text.strip():
+            if (
+                (suggestion.segment_index, suggestion.original_term) in valid_candidates
+                and suggestion.suggested_term.strip()
+            ):
                 refined.append(suggestion)
         return refined
 

@@ -28,6 +28,32 @@ def test_health_reports_configuration(tmp_path: Path) -> None:
     assert response.json()["ai_configured"] is True
 
 
+def test_legacy_sentence_review_job_stays_visible() -> None:
+    job = Job.model_validate(
+        {
+            "id": "legacy-job",
+            "filename": "meeting.mp4",
+            "review_status": "ready",
+            "review_items": [
+                {
+                    "id": "old-item",
+                    "segment_index": 0,
+                    "start_seconds": 0,
+                    "end_seconds": 3,
+                    "original_text": "这是旧版整句校对。",
+                    "suggested_text": "这是旧版句子校对。",
+                    "confidence": 0.5,
+                    "reason": "旧格式",
+                }
+            ],
+        }
+    )
+
+    assert job.review_status == "idle"
+    assert job.review_items == []
+    assert job.review_stage == "需重新运行词级校对"
+
+
 def test_rejects_unsupported_upload(tmp_path: Path) -> None:
     app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
     with TestClient(app) as client:
@@ -108,13 +134,18 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
         assert reviewed["review_status"] == "ready"
         assert len(reviewed["review_items"]) == 1
         item = reviewed["review_items"][0]
+        assert item["context_text"] == "主持人：今天确认 Meet Mine 第一版流程。"
+        assert item["original_term"] == "Meet Mine"
+        assert item["suggested_term"] == "MeetMind"
+        assert item["start_seconds"] == 0.25
+        assert item["end_seconds"] == 0.58
         assert client.get(f"/api/jobs/{job_id}/review/{item['id']}/audio").status_code == 200
 
         apply_response = client.post(
             f"/api/jobs/{job_id}/review/apply",
             json={
                 "corrections": [
-                    {"item_id": item["id"], "text": "主持人：确认 MeetMind 第一版流程。"}
+                    {"item_id": item["id"], "replacement": "MeetMind"}
                 ]
             },
         )
@@ -123,4 +154,5 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
 
     assert corrected["review_status"] == "completed"
     assert "MeetMind" in corrected["transcript"]
-    assert corrected["review_items"][0]["correction"].startswith("主持人")
+    assert "Meet Mine" not in corrected["transcript"]
+    assert corrected["review_items"][0]["correction_term"] == "MeetMind"

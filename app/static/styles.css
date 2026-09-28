@@ -189,13 +189,14 @@ main { max-width: 1240px; margin: 0 auto; padding: 0 32px 100px; }
 .review-frames img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--paper-deep); }
 .review-item audio { width: 100%; height: 36px; margin-top: 13px; }
 .review-original, .review-ocr, .review-reason { margin: 10px 0 0; font-size: 11px; line-height: 1.65; }
-.review-original { color: var(--ink); }
+.review-original { color: var(--muted); }
+.review-original mark { padding: 2px 4px; background: #ffe6a7; color: #7a2e14; font-weight: 800; }
 .review-ocr { color: var(--green); }
 .review-reason { color: var(--muted); }
 .review-correction-field { margin-top: 13px; display: flex; flex-direction: column; gap: 7px; }
 .review-correction-field span { font-size: 10px; font-weight: 700; }
-.review-correction-field textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); background: var(--white); resize: vertical; color: var(--ink); font: 12px/1.6 ui-monospace, "PingFang SC", monospace; }
-.review-correction-field textarea:focus { border-color: var(--accent); outline: 0; }
+.review-correction-field input { width: min(100%, 360px); padding: 10px 11px; border: 1px solid var(--line); background: var(--white); color: var(--ink); font: 12px/1.6 ui-monospace, "PingFang SC", monospace; }
+.review-correction-field input:focus { border-color: var(--accent); outline: 0; }
 .review-keep { margin-top: 8px; padding: 0 0 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .review-apply { width: 100%; margin-top: 14px; padding: 14px 18px; background: var(--accent); }
 .review-start:disabled, .review-apply:disabled { cursor: wait; opacity: .55; }

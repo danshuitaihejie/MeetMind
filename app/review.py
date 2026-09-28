@@ -50,6 +50,25 @@ def _build_timed_transcript(segments: list[TranscriptSegment]) -> str:
     return "\n".join(lines)
 
 
+def _term_window(segment: TranscriptSegment, term: str) -> tuple[float, float]:
+    """Locate a suspicious term within word-level ASR tokens when possible."""
+    normalized_term = "".join(term.split())
+    if not normalized_term or not segment.tokens:
+        return segment.start_seconds, segment.end_seconds
+    for start_index in range(len(segment.tokens)):
+        combined = ""
+        for end_index in range(start_index, len(segment.tokens)):
+            combined += "".join(segment.tokens[end_index].text.split())
+            if combined == normalized_term:
+                return (
+                    segment.tokens[start_index].start_seconds,
+                    segment.tokens[end_index].end_seconds,
+                )
+            if not normalized_term.startswith(combined):
+                break
+    return segment.start_seconds, segment.end_seconds
+
+
 def review_job(
     job_id: str,
     input_path: Path,
@@ -98,6 +117,15 @@ def review_job(
                 review_progress=progress,
             )
             for segment in ai.transcribe_detailed(chunk):
+                offset_tokens = [
+                    token.model_copy(
+                        update={
+                            "start_seconds": round(token.start_seconds + offset, 3),
+                            "end_seconds": round(token.end_seconds + offset, 3),
+                        }
+                    )
+                    for token in segment.tokens
+                ]
                 segments.append(
                     TranscriptSegment(
                         index=len(segments),
@@ -105,6 +133,7 @@ def review_job(
                         end_seconds=round(segment.end_seconds + offset, 3),
                         text=segment.text,
                         speaker=segment.speaker,
+                        tokens=offset_tokens,
                     )
                 )
             offset += media.probe_duration(chunk)
@@ -119,15 +148,17 @@ def review_job(
             segment = by_index.get(suggestion.segment_index)
             if not segment:
                 continue
+            term_start, term_end = _term_window(segment, suggestion.original_term)
             items.append(
                 ReviewItem(
                     id=uuid.uuid4().hex[:12],
                     segment_index=segment.index,
-                    start_seconds=segment.start_seconds,
-                    end_seconds=segment.end_seconds,
+                    start_seconds=term_start,
+                    end_seconds=term_end,
                     speaker=segment.speaker,
-                    original_text=segment.text,
-                    suggested_text=suggestion.suggested_text.strip(),
+                    context_text=segment.text,
+                    original_term=suggestion.original_term.strip(),
+                    suggested_term=suggestion.suggested_term.strip(),
                     confidence=suggestion.confidence,
                     reason=suggestion.reason.strip(),
                 )
@@ -171,13 +202,13 @@ def review_job(
 
         store.update(job_id, review_stage="融合 OCR 结果", review_progress=90)
         refined = {
-            suggestion.segment_index: suggestion
+            (suggestion.segment_index, suggestion.original_term): suggestion
             for suggestion in ai.refine_review_suggestions(items, job.context)
         }
         for item in items:
-            suggestion = refined.get(item.segment_index)
+            suggestion = refined.get((item.segment_index, item.original_term))
             if suggestion:
-                item.suggested_text = suggestion.suggested_text.strip()
+                item.suggested_term = suggestion.suggested_term.strip()
                 item.confidence = suggestion.confidence
                 item.reason = suggestion.reason.strip()
 
@@ -224,13 +255,13 @@ def apply_review_corrections(
             item = items_by_id.get(correction.item_id)
             if not item:
                 continue
-            text = correction.text.strip()
-            if not text:
+            replacement = correction.replacement.strip()
+            if not replacement:
                 continue
             segment = segments_by_index.get(item.segment_index)
-            if segment:
-                segment.text = text
-                item.correction = text
+            if segment and item.original_term in segment.text:
+                segment.text = segment.text.replace(item.original_term, replacement, 1)
+                item.correction_term = replacement
 
         original_transcript = job_dir / "transcript.original.txt"
         transcript_path = job_dir / "transcript.txt"
@@ -239,7 +270,7 @@ def apply_review_corrections(
 
         transcript = _build_timed_transcript(segments)
         transcript_path.write_text(transcript, encoding="utf-8")
-        _save_segments(job_dir / "review" / "segments.json", segments)
+        _save_segments(job_dir / "review" / "segments.corrected.json", segments)
         store.update(
             job_id,
             review_stage="根据修正重新生成纪要",
