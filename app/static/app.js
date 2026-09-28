@@ -277,6 +277,27 @@ function renderJob(job) {
     error.textContent = job.error;
     error.classList.remove("hidden");
   }
+  if (job.status === "failed") {
+    const retry = $(".retry-button", card);
+    retry.classList.remove("hidden");
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.textContent = "正在重新处理…";
+      try {
+        const response = await fetch(`/api/jobs/${job.id}/retry`, { method: "POST" });
+        if (!response.ok) {
+          const payload = await response.json();
+          throw new Error(payload.detail || "重新处理失败");
+        }
+        await loadJobs();
+        startPolling();
+      } catch (error) {
+        retry.disabled = false;
+        retry.textContent = "重新处理 ↻";
+        setError(error.message);
+      }
+    });
+  }
 
   if (job.minutes || job.transcript) {
     const results = $(".job-results", card);

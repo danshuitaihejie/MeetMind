@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.ai import AIService
 from app.config import Settings
 from app.media import MediaProcessor
-from app.models import HealthResponse, Job
+from app.models import HealthResponse, Job, JobStatus
 from app.pipeline import process_job
 from app.store import JobStore
 
@@ -125,6 +125,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store.create(job)
         background_tasks.add_task(process_job, job_id, input_path, store, media, ai)
         return job
+
+    @app.post("/api/jobs/{job_id}/retry", response_model=Job, status_code=202)
+    def retry_job(job_id: str, background_tasks: BackgroundTasks) -> Job:
+        job = store.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if job.status != JobStatus.failed:
+            raise HTTPException(status_code=409, detail="只有失败的任务可以重新处理")
+        source_files = sorted(store.job_dir(job_id).glob("source.*"))
+        if not source_files:
+            raise HTTPException(status_code=410, detail="原始文件已不存在，请重新上传")
+
+        for filename in ("transcript.txt", "minutes.md"):
+            (store.job_dir(job_id) / filename).unlink(missing_ok=True)
+        retried = store.update(
+            job_id,
+            status=JobStatus.queued,
+            stage="等待重新处理",
+            progress=0,
+            transcript=None,
+            minutes=None,
+            error=None,
+        )
+        background_tasks.add_task(process_job, job_id, source_files[0], store, media, ai)
+        return retried
 
     def artifact(job_id: str, filename: str, media_type: str) -> FileResponse:
         if not store.get(job_id):

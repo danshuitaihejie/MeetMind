@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import mimetypes
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +26,11 @@ class AIService:
         self,
         settings: Settings,
         transport: httpx.BaseTransport | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self.settings = settings
         self.transport = transport
+        self.sleeper = sleeper
 
     def _ensure_configured(self) -> None:
         if not self.settings.minimax_api_key:
@@ -34,29 +38,61 @@ class AIService:
                 "缺少 MINIMAX_API_KEY。压缩音频已经生成；配置密钥后可继续转写和整理纪要。"
             )
 
+    @staticmethod
+    def _rewind_uploads(kwargs: dict[str, Any]) -> None:
+        files = kwargs.get("files")
+        if not isinstance(files, dict):
+            return
+        for value in files.values():
+            file_object = value[1] if isinstance(value, tuple) and len(value) > 1 else value
+            if hasattr(file_object, "seek"):
+                file_object.seek(0)
+
     def _post(self, path: str, **kwargs: Any) -> dict[str, Any]:
         self._ensure_configured()
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self.settings.minimax_api_key}"
         timeout = httpx.Timeout(connect=20, read=600, write=600, pool=20)
+        response: httpx.Response | None = None
+        last_network_error: httpx.HTTPError | None = None
+        for attempt in range(3):
+            self._rewind_uploads(kwargs)
+            try:
+                with httpx.Client(
+                    base_url=self.settings.minimax_base_url,
+                    headers=headers,
+                    timeout=timeout,
+                    transport=self.transport,
+                ) as client:
+                    response = client.post(path, **kwargs)
+                last_network_error = None
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_network_error = exc
+                if attempt < 2:
+                    self.sleeper(2**attempt)
+                    continue
+                message = (
+                    "MiniMax 请求超时"
+                    if isinstance(exc, httpx.TimeoutException)
+                    else str(exc)
+                )
+                raise MiniMaxAPIError(f"无法连接 MiniMax API：{message}") from exc
+
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < 2:
+                    self.sleeper(2**attempt)
+                    continue
+            break
+
+        if response is None:
+            raise MiniMaxAPIError(f"无法连接 MiniMax API：{last_network_error or '未知错误'}")
         try:
-            with httpx.Client(
-                base_url=self.settings.minimax_base_url,
-                headers=headers,
-                timeout=timeout,
-                transport=self.transport,
-            ) as client:
-                response = client.post(path, **kwargs)
             response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise MiniMaxAPIError("MiniMax 请求超时，请稍后重试") from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text.strip().replace("\n", " ")[:500]
             raise MiniMaxAPIError(
                 f"MiniMax API 返回 {exc.response.status_code}：{detail or '请求失败'}"
             ) from exc
-        except httpx.HTTPError as exc:
-            raise MiniMaxAPIError(f"无法连接 MiniMax API：{exc}") from exc
 
         try:
             payload = response.json()

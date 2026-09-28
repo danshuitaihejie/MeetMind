@@ -21,7 +21,13 @@ def process_job(
 
     output_path = store.job_dir(job_id) / "compressed.mp3"
     try:
-        store.update(job_id, status=JobStatus.processing, stage="读取媒体信息", progress=12)
+        store.update(
+            job_id,
+            status=JobStatus.processing,
+            stage="读取媒体信息",
+            progress=12,
+            error=None,
+        )
         original_duration = media.probe_duration(input_path)
 
         store.update(
@@ -68,6 +74,7 @@ def process_job(
             stage="处理完成",
             progress=100,
             minutes=minutes,
+            error=None,
         )
     except Exception as exc:  # Pipeline failures must be visible to the polling client.
         store.update(

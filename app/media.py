@@ -89,7 +89,7 @@ class MediaProcessor:
         input_path: Path,
         output_dir: Path,
         duration_seconds: float,
-        segment_seconds: float = 480,
+        segment_seconds: float = 300,
     ) -> list[Path]:
         """Split MP3 below MiniMax's 500-second ASR limit, with safety headroom."""
         if duration_seconds <= segment_seconds:
@@ -97,6 +97,8 @@ class MediaProcessor:
         if segment_seconds <= 0 or segment_seconds >= 500:
             raise ValueError("segment_seconds must be between 0 and 500")
 
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_pattern = output_dir / "chunk_%03d.mp3"
         command = [

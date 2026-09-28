@@ -14,6 +14,7 @@ def make_service(handler: httpx.MockTransport) -> AIService:
     return AIService(
         Settings(minimax_api_key="test-key", minimax_base_url="https://api.example.test"),
         transport=handler,
+        sleeper=lambda _: None,
     )
 
 
@@ -60,3 +61,27 @@ def test_minimax_api_error_is_readable(tmp_path: Path) -> None:
     with pytest.raises(MiniMaxAPIError, match="401"):
         service.transcribe(audio)
 
+
+def test_minimax_retries_temporary_asr_failure_with_full_file(tmp_path: Path) -> None:
+    audio = tmp_path / "meeting.mp3"
+    audio.write_bytes(b"full-audio-payload")
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        body = request.read()
+        assert b"full-audio-payload" in body
+        if attempts < 3:
+            return httpx.Response(
+                500,
+                json={
+                    "type": "error",
+                    "error": {"message": "system error, speech recognition failed (1033)"},
+                },
+            )
+        return httpx.Response(200, json={"text": "重试成功", "duration": 10})
+
+    service = make_service(httpx.MockTransport(handler))
+    assert service.transcribe(audio) == "重试成功"
+    assert attempts == 3
