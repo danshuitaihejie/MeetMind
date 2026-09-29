@@ -5,6 +5,8 @@ const state = {
   duration: null,
   jobs: [],
   polling: null,
+  expandedJobId: null,
+  jobsInitialized: false,
 };
 
 const elements = {
@@ -28,6 +30,8 @@ const elements = {
   emptyState: $("#emptyState"),
   jobsList: $("#jobsList"),
   refresh: $("#refreshJobs"),
+  newMeeting: $("#newMeetingToggle"),
+  uploadWorkspace: $("#uploadWorkspace"),
   template: $("#jobTemplate"),
 };
 
@@ -144,8 +148,15 @@ function upload() {
     elements.uploadProgress.classList.add("hidden");
     elements.submit.disabled = !state.file;
     if (request.status >= 200 && request.status < 300) {
+      try {
+        const created = JSON.parse(request.responseText);
+        state.expandedJobId = created.id;
+        state.jobsInitialized = true;
+      } catch { /* The next refresh will still show the newest task. */ }
       clearFile();
       elements.context.value = "";
+      document.body.classList.remove("show-upload");
+      elements.newMeeting.textContent = "新建会议";
       await loadJobs();
       $("#jobsSection").scrollIntoView({ behavior: "smooth", block: "start" });
       startPolling();
@@ -508,6 +519,7 @@ function renderReview(job, card) {
   }
 
   start.addEventListener("click", async () => {
+    state.expandedJobId = job.id;
     start.disabled = true;
     start.textContent = "正在启动校对…";
     try {
@@ -523,12 +535,15 @@ function renderReview(job, card) {
   });
 
   if (["ready", "completed"].includes(status)) {
+    const listHeading = $(".review-list-heading", panel);
     if (!job.review_items.length) {
       const empty = document.createElement("p");
       empty.className = "review-empty";
       empty.textContent = "原速音频复核完成，未发现明显需要人工确认的词。";
       list.appendChild(empty);
     } else {
+      $("strong", listHeading).textContent = `AI 标记的词 · ${job.review_items.length}`;
+      listHeading.classList.remove("hidden");
       job.review_items.forEach((item) => list.appendChild(renderReviewItem(job, item)));
       apply.classList.remove("hidden");
     }
@@ -537,6 +552,7 @@ function renderReview(job, card) {
       ? "更新修正并重新生成纪要 →"
       : "应用以上修正并重新生成纪要 →";
     apply.addEventListener("click", async () => {
+      state.expandedJobId = job.id;
       const corrections = [...panel.querySelectorAll(".review-correction")].map((field) => ({
         item_id: field.dataset.itemId,
         replacement: field.value.trim(),
@@ -573,7 +589,29 @@ function renderReview(job, card) {
 function renderJob(job) {
   const fragment = elements.template.content.cloneNode(true);
   const card = $(".job-card", fragment);
+  const toggle = $(".job-toggle", card);
+  const expanded = state.expandedJobId === job.id;
+  card.dataset.jobId = job.id;
   card.classList.add(job.status);
+  card.classList.toggle("expanded", expanded);
+  toggle.setAttribute("aria-expanded", String(expanded));
+  $("span", toggle).textContent = expanded ? "收起" : "展开";
+  toggle.addEventListener("click", () => {
+    const shouldExpand = !card.classList.contains("expanded");
+    document.querySelectorAll(".job-card.expanded").forEach((otherCard) => {
+      if (otherCard === card) return;
+      otherCard.classList.remove("expanded");
+      const otherToggle = $(".job-toggle", otherCard);
+      otherToggle.setAttribute("aria-expanded", "false");
+      $("span", otherToggle).textContent = "展开";
+      otherCard.querySelectorAll("audio").forEach((audio) => audio.pause());
+    });
+    card.classList.toggle("expanded", shouldExpand);
+    toggle.setAttribute("aria-expanded", String(shouldExpand));
+    $("span", toggle).textContent = shouldExpand ? "收起" : "展开";
+    state.expandedJobId = shouldExpand ? job.id : null;
+    if (!shouldExpand) card.querySelectorAll("audio").forEach((audio) => audio.pause());
+  });
   $(".job-title strong", card).textContent = job.filename;
   $(".job-title span", card).textContent = new Date(job.created_at).toLocaleString("zh-CN");
   $(".job-state span", card).textContent = job.stage;
@@ -603,6 +641,7 @@ function renderJob(job) {
     const retry = $(".retry-button", card);
     retry.classList.remove("hidden");
     retry.addEventListener("click", async () => {
+      state.expandedJobId = job.id;
       retry.disabled = true;
       retry.textContent = "正在重新处理…";
       try {
@@ -658,8 +697,24 @@ function renderJob(job) {
 }
 
 function renderJobs() {
+  if (!state.jobsInitialized) {
+    const active = state.jobs.find((job) => (
+      ["queued", "processing"].includes(job.status)
+      || ["processing", "applying"].includes(job.review_status)
+    ));
+    state.expandedJobId = active?.id || state.jobs[0]?.id || null;
+    state.jobsInitialized = true;
+  } else if (
+    state.expandedJobId
+    && !state.jobs.some((job) => job.id === state.expandedJobId)
+  ) {
+    state.expandedJobId = state.jobs[0]?.id || null;
+  }
+  const hasJobs = state.jobs.length > 0;
+  document.body.classList.toggle("has-jobs", hasJobs);
+  elements.newMeeting.classList.toggle("hidden", !hasJobs);
   elements.jobsList.replaceChildren();
-  elements.emptyState.classList.toggle("hidden", state.jobs.length > 0);
+  elements.emptyState.classList.toggle("hidden", hasJobs);
   for (const job of state.jobs) elements.jobsList.appendChild(renderJob(job));
 }
 
@@ -691,6 +746,12 @@ elements.speed.addEventListener("change", updateEstimate);
 elements.trim.addEventListener("change", updateEstimate);
 elements.submit.addEventListener("click", upload);
 elements.refresh.addEventListener("click", loadJobs);
+elements.newMeeting.addEventListener("click", () => {
+  const show = !document.body.classList.contains("show-upload");
+  document.body.classList.toggle("show-upload", show);
+  elements.newMeeting.textContent = show ? "收起上传" : "新建会议";
+  if (show) elements.uploadWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 ["dragenter", "dragover"].forEach((name) => elements.dropzone.addEventListener(name, (event) => {
   event.preventDefault(); elements.dropzone.classList.add("dragging");
 }));
