@@ -166,57 +166,59 @@
           <div class="job-metrics"></div>
           <p class="job-error hidden"></p>
           <button class="retry-button hidden" type="button">重新处理 ↻</button>
-          <div class="job-results hidden">
-            <div class="result-tabs">
-              <button type="button" class="active" data-tab="minutes">会议纪要</button>
-              <button type="button" data-tab="transcript">完整转写</button>
-            </div>
-            <div class="result-content"></div>
-            <div class="result-actions">
-              <button class="copy-button" type="button">复制内容</button>
-              <a data-download="minutes">下载纪要</a>
-              <a data-download="audio">下载压缩音频</a>
-            </div>
-          </div>
-          <div class="review-panel hidden">
-            <div class="review-heading">
-              <div>
-                <span>ENHANCED REVIEW</span>
-                <strong>不确定文字校对</strong>
+          <div class="job-content-grid hidden">
+            <div class="job-results hidden">
+              <div class="result-tabs">
+                <button type="button" class="active" data-tab="minutes">会议纪要</button>
+                <button type="button" data-tab="transcript">完整转写</button>
               </div>
-              <button class="review-start" type="button">智能校对：OCR + 原声</button>
-            </div>
-            <p class="review-description">
-              只需确认高亮的疑似词，不必重审整句。视频画面仅在本地 OCR；置信度为 AI 交叉校验估值。
-            </p>
-            <div class="review-progress hidden"><i><b></b></i><span></span></div>
-            <p class="review-error hidden"></p>
-            <section class="manual-review hidden">
-              <div class="manual-review-heading">
-                <strong>AI 没标出来？手动修正遗漏词</strong>
-                <span>不限置信度</span>
+              <div class="result-content"></div>
+              <div class="result-actions">
+                <button class="copy-button" type="button">复制内容</button>
+                <a data-download="minutes">下载纪要</a>
+                <a data-download="audio">下载压缩音频</a>
               </div>
-              <p>输入转写中的原词和正确写法，再从短上下文中选择准确位置。</p>
-              <form class="manual-review-form">
-                <label>
-                  <span>原词 / 短语</span>
-                  <input class="manual-original" type="text" maxlength="100" autocomplete="off">
-                </label>
-                <label>
-                  <span>修改为</span>
-                  <input class="manual-replacement" type="text" maxlength="100" autocomplete="off">
-                </label>
-                <button type="submit">查找位置</button>
-              </form>
-              <p class="manual-review-error hidden"></p>
-              <div class="manual-review-results"></div>
-              <div class="manual-review-pending"></div>
-            </section>
-            <div class="review-list-heading hidden">
-              <strong>AI 标记的词</strong><span>在下方区域内滚动查看</span>
             </div>
-            <div class="review-list"></div>
-            <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
+            <div class="review-panel hidden">
+              <div class="review-heading">
+                <div>
+                  <span>ENHANCED REVIEW</span>
+                  <strong>不确定文字校对</strong>
+                </div>
+                <button class="review-start" type="button">智能校对：OCR + 原声</button>
+              </div>
+              <p class="review-description">
+                只需确认高亮的疑似词，不必重审整句。视频画面仅在本地 OCR；置信度为 AI 交叉校验估值。
+              </p>
+              <div class="review-progress hidden"><i><b></b></i><span></span></div>
+              <p class="review-error hidden"></p>
+              <section class="manual-review hidden">
+                <div class="manual-review-heading">
+                  <strong>AI 没标出来？手动修正遗漏词</strong>
+                  <span>不限置信度</span>
+                </div>
+                <p>输入转写中的原词和正确写法，再从短上下文中选择准确位置。</p>
+                <form class="manual-review-form">
+                  <label>
+                    <span>原词 / 短语</span>
+                    <input class="manual-original" type="text" maxlength="100" autocomplete="off">
+                  </label>
+                  <label>
+                    <span>修改为</span>
+                    <input class="manual-replacement" type="text" maxlength="100" autocomplete="off">
+                  </label>
+                  <button type="submit">查找位置</button>
+                </form>
+                <p class="manual-review-error hidden"></p>
+                <div class="manual-review-results"></div>
+                <div class="manual-review-pending"></div>
+              </section>
+              <div class="review-list-heading hidden">
+                <strong>AI 标记的词</strong><span>在右侧区域内滚动查看</span>
+              </div>
+              <div class="review-list"></div>
+              <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
+            </div>
           </div>
         </div>
       </article>

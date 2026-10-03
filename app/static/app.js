@@ -693,6 +693,12 @@ function renderJob(job) {
     $("[data-download='audio']", card).href = `/api/jobs/${job.id}/audio`;
   }
   renderReview(job, card);
+  const contentGrid = $(".job-content-grid", card);
+  const reviewPanel = $(".review-panel", card);
+  const hasResults = !$(".job-results", card).classList.contains("hidden");
+  const hasReview = !reviewPanel.classList.contains("hidden");
+  contentGrid.classList.toggle("hidden", !hasResults && !hasReview);
+  contentGrid.classList.toggle("single-pane", !hasReview);
   return fragment;
 }
 
