@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.models import Job
+from app.corrections import CorrectionMemory, CorrectionRecord
+from app.models import Job, ReviewStatus
 
 
 class JobStore:
@@ -15,6 +17,54 @@ class JobStore:
         self._lock = threading.RLock()
         self._jobs: dict[str, Job] = {}
         self._load()
+        self.corrections = CorrectionMemory(root.parent / "corrections.sqlite3")
+        self._import_confirmed_corrections()
+
+    def _import_confirmed_corrections(self) -> None:
+        """Recover confirmations from jobs created before shared correction memory."""
+        records: list[CorrectionRecord] = []
+        for job in self._jobs.values():
+            if job.review_status != ReviewStatus.completed:
+                continue
+            for item in job.review_items:
+                if item.correction_term is not None:
+                    records.append(CorrectionRecord(
+                        job_id=job.id,
+                        segment_index=item.segment_index,
+                        term_start=max(0, item.context_text.find(item.original_term)),
+                        original_term=item.original_term,
+                        replacement=item.correction_term,
+                        context_text=item.context_text,
+                        source="suggested",
+                        created_at=job.updated_at.isoformat(),
+                    ))
+            contexts: dict[int, str] = {}
+            if job.review_manual_corrections:
+                try:
+                    payload = json.loads(
+                        (self.root / job.id / "review" / "segments.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    if isinstance(payload, list):
+                        contexts = {
+                            item["index"]: item["text"] for item in payload
+                            if isinstance(item, dict) and "index" in item and "text" in item
+                        }
+                except (OSError, ValueError):
+                    pass
+            for correction in job.review_manual_corrections:
+                records.append(CorrectionRecord(
+                    job_id=job.id,
+                    segment_index=correction.segment_index,
+                    term_start=correction.term_start,
+                    original_term=correction.original_term,
+                    replacement=correction.replacement,
+                    context_text=contexts.get(correction.segment_index, job.transcript or ""),
+                    source="manual",
+                    created_at=job.updated_at.isoformat(),
+                ))
+        self.corrections.remember(records)
 
     def _load(self) -> None:
         for path in self.root.glob("*/job.json"):

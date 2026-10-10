@@ -61,7 +61,13 @@ def process_job(
                 progress=progress,
             )
             transcript_parts.append(ai.transcribe(chunk, job.context))
-        transcript = "\n\n".join(transcript_parts)
+        raw_transcript = "\n\n".join(transcript_parts)
+        store.update(job_id, stage="应用已确认的词语纠正", progress=82)
+        transcript = store.corrections.apply(raw_transcript)
+        if transcript != raw_transcript:
+            (store.job_dir(job_id) / "transcript.original.txt").write_text(
+                raw_transcript, encoding="utf-8"
+            )
         (store.job_dir(job_id) / "transcript.txt").write_text(transcript, encoding="utf-8")
 
         store.update(job_id, stage="MiniMax 整理会议纪要", progress=84, transcript=transcript)

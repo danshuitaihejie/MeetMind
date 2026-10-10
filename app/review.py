@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from app.ai import AIService
+from app.corrections import CorrectionRecord
 from app.media import MediaProcessor
 from app.models import (
     ManualReviewCorrection,
@@ -187,6 +188,8 @@ def review_job(
                 )
             offset += media.probe_duration(chunk)
 
+        _save_segments(review_dir / "segments.original.json", segments)
+        segments = store.corrections.apply_segments(segments)
         segments_path = review_dir / "segments.json"
         _save_segments(segments_path, segments)
         store.update(job_id, review_stage="定位疑似错字", review_progress=58)
@@ -195,7 +198,7 @@ def review_job(
         items: list[ReviewItem] = []
         for suggestion in suggestions:
             segment = by_index.get(suggestion.segment_index)
-            if not segment:
+            if not segment or suggestion.original_term.strip() not in segment.text:
                 continue
             term_start, term_end = _term_window(segment, suggestion.original_term)
             items.append(
@@ -324,7 +327,41 @@ def apply_review_corrections(
                 or segment.text[correction.term_start:term_end] != correction.original_term
             ):
                 raise ValueError("手动校对位置已失效，请重新搜索该词")
-            edits[(segment.index, correction.term_start, term_end)] = correction.replacement
+            replacement = correction.replacement.strip()
+            if not replacement:
+                raise ValueError("修正词不能为空")
+            edits[(segment.index, correction.term_start, term_end)] = replacement
+
+        records: list[CorrectionRecord] = []
+        for (segment_index, term_start, term_end), replacement in sorted(edits.items()):
+            segment = segments_by_index[segment_index]
+            records.append(CorrectionRecord(
+                job_id=job_id,
+                segment_index=segment_index,
+                term_start=term_start,
+                original_term=segment.text[term_start:term_end],
+                replacement=replacement,
+                context_text=segment.text,
+                source=(
+                    "manual" if any(
+                        item.segment_index == segment_index and item.term_start == term_start
+                        for item in manual_corrections
+                    ) else "suggested"
+                ),
+            ))
+        previous_edit: tuple[int, int, int] | None = None
+        for edit in sorted(edits):
+            if previous_edit and edit[0] == previous_edit[0] and edit[1] < previous_edit[2]:
+                raise ValueError("修正位置重叠，请分别确认需要修改的词语")
+            previous_edit = edit
+
+        for item in items_by_id.values():
+            segment = segments_by_index.get(item.segment_index)
+            if segment and item.original_term in segment.text:
+                term_start = segment.text.index(item.original_term)
+                edit = (segment.index, term_start, term_start + len(item.original_term))
+                if edit in edits:
+                    item.correction_term = edits[edit]
 
         for (segment_index, term_start, term_end), replacement in sorted(
             edits.items(),
@@ -344,6 +381,8 @@ def apply_review_corrections(
         transcript = _build_timed_transcript(segments)
         transcript_path.write_text(transcript, encoding="utf-8")
         _save_segments(job_dir / "review" / "segments.corrected.json", segments)
+        # Remember accepted edits even when the later summary request fails.
+        store.corrections.remember(records)
         store.update(
             job_id,
             review_stage="根据修正重新生成纪要",

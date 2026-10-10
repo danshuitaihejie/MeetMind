@@ -175,3 +175,61 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
     assert "首版流程" in corrected["transcript"]
     assert corrected["review_items"][0]["correction_term"] == "MeetMind"
     assert corrected["review_manual_corrections"][0]["replacement"] == "首版"
+
+    corrections = app.state.store.corrections.records()
+    assert {
+        (
+            correction.original_term,
+            correction.replacement,
+            correction.context_text,
+            correction.job_id,
+            correction.source,
+        )
+        for correction in corrections
+    } == {
+        (
+            "Meet Mine",
+            "MeetMind",
+            "主持人：今天确认 Meet Mine 第一版流程。",
+            job_id,
+            "suggested",
+        ),
+        (
+            "第一版",
+            "首版",
+            "主持人：今天确认 Meet Mine 第一版流程。",
+            job_id,
+            "manual",
+        ),
+    }
+
+    restarted_app = create_app(Settings(data_dir=tmp_path / "runtime", mock_ai=True))
+    with TestClient(restarted_app) as client, sample.open("rb") as audio:
+        created_again = client.post(
+            "/api/jobs",
+            files={"file": ("sample.wav", audio, "audio/wav")},
+            data={"speed": "1.5", "trim_silence": "false"},
+        )
+        assert created_again.status_code == 202
+        new_job_id = created_again.json()["id"]
+        new_job = client.get(f"/api/jobs/{new_job_id}").json()
+        assert "首版流程" in new_job["transcript"]
+        original_transcript = (
+            restarted_app.state.store.job_dir(new_job_id) / "transcript.original.txt"
+        ).read_text(encoding="utf-8")
+        assert "第一版流程" in original_transcript
+
+        review_response = client.post(f"/api/jobs/{new_job_id}/review")
+        assert review_response.status_code == 202
+        reviewed_again = client.get(f"/api/jobs/{new_job_id}").json()
+        assert reviewed_again["review_status"] == "ready"
+        assert reviewed_again["review_items"] == []
+
+        corrected_matches = client.get(
+            f"/api/jobs/{new_job_id}/review/search",
+            params={"term": "MeetMind"},
+        )
+        assert corrected_matches.status_code == 200
+        corrected_match = corrected_matches.json()[0]
+        assert corrected_match["start_seconds"] == 0.25
+        assert corrected_match["end_seconds"] == 0.58
