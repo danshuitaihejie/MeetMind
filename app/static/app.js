@@ -6,6 +6,7 @@ const state = {
   jobs: [],
   polling: null,
   expandedJobId: null,
+  usageExpandedJobIds: new Set(),
   jobsInitialized: false,
 };
 
@@ -175,6 +176,122 @@ function upload() {
 
 function metric(label, value) {
   return `<span>${label}<strong>${value}</strong></span>`;
+}
+
+const usageOperationLabels = {
+  transcription: "语音转写",
+  review_transcription: "校对复听转写",
+  summary: "生成纪要",
+  summary_regeneration: "重新生成纪要",
+  review_detection: "校对词语检测",
+  review_refinement: "校对结果细化",
+};
+
+const usageStatusLabels = {
+  success: "成功",
+  http_error: "HTTP 错误",
+  network_error: "网络错误",
+  api_error: "API 错误",
+  invalid_response: "响应无效",
+  mock: "模拟调用（未调用真实 API）",
+};
+
+function usageValue(value) {
+  return Number.isInteger(value) && value >= 0 ? value.toLocaleString("zh-CN") : "未报告";
+}
+
+function usageMetric(label, value) {
+  const item = document.createElement("div");
+  item.className = "usage-metric";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const number = document.createElement("strong");
+  number.textContent = value;
+  item.append(name, number);
+  return item;
+}
+
+function renderUsage(job, card) {
+  const panel = $(".usage-panel", card);
+  panel.open = state.usageExpandedJobIds.has(job.id);
+  panel.addEventListener("toggle", () => {
+    if (panel.open) state.usageExpandedJobIds.add(job.id);
+    else state.usageExpandedJobIds.delete(job.id);
+  });
+  const summaryNode = $(".usage-summary", panel);
+  const note = $(".usage-note", panel);
+  const callsNode = $(".usage-calls", panel);
+  const summary = job.usage_summary;
+  const calls = Array.isArray(job.usage_calls) ? job.usage_calls : null;
+
+  if (!calls || calls.length === 0) {
+    note.textContent = "尚未记录用量；历史任务无法补算。";
+    return;
+  }
+
+  summaryNode.append(
+    usageMetric("已报告 Token", usageValue(summary?.total_tokens)),
+    usageMetric("输入 Token", usageValue(summary?.input_tokens)),
+    usageMetric("输出 Token", usageValue(summary?.output_tokens)),
+    usageMetric("缓存输入 Token", usageValue(summary?.cached_input_tokens)),
+    usageMetric("ASR 时长", Number.isFinite(summary?.asr_duration_seconds)
+      ? `${formatDuration(summary.asr_duration_seconds)}${summary.missing_asr_duration_calls ? " + 未报告" : ""}`
+      : "未报告"),
+  );
+
+  const callCount = usageValue(summary?.call_count);
+  const textCount = usageValue(summary?.text_call_count);
+  const asrCount = usageValue(summary?.asr_call_count);
+  const mockCount = usageValue(summary?.mock_call_count);
+  const failedCount = usageValue(summary?.failed_call_count);
+  const missingText = usageValue(summary?.missing_text_usage_calls);
+  const missingAsr = usageValue(summary?.missing_asr_duration_calls);
+  note.textContent = `调用 ${callCount} 次（文本 ${textCount} · ASR ${asrCount} · 模拟 ${mockCount}） · 失败 ${failedCount} 次 · 缺少文本 Token 统计 ${missingText} 次 · ASR 时长未报告 ${missingAsr} 次。缓存输入已包含在输入 Token 中；ASR 按音频时长统计。Token 统计不等同于订阅额度扣减或账单金额。`;
+
+  const heading = document.createElement("h3");
+  heading.className = "usage-calls-heading";
+  heading.textContent = "各阶段调用明细";
+  callsNode.appendChild(heading);
+
+  for (const call of calls) {
+    const row = document.createElement("article");
+    row.className = "usage-call";
+    const title = document.createElement("div");
+    title.className = "usage-call-title";
+    const operation = document.createElement("strong");
+    operation.textContent = usageOperationLabels[call.operation] || call.operation || "未知阶段";
+    const status = document.createElement("span");
+    status.className = `usage-status${call.status === "success" ? " success" : call.status === "mock" ? " mock" : ""}`;
+    status.textContent = usageStatusLabels[call.status] || call.status || "状态未知";
+    title.append(operation, status);
+
+    const metadata = document.createElement("p");
+    metadata.className = "usage-call-meta";
+    const kind = call.kind === "asr" ? "ASR" : call.kind === "text" ? "文本" : "类型未知";
+    const model = call.model || "模型未记录";
+    const attempt = Number.isInteger(call.attempt) && call.attempt > 1 ? ` · 第 ${call.attempt} 次请求（重试）` : "";
+    const createdAt = call.created_at ? new Date(call.created_at) : null;
+    const time = createdAt && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) : "";
+    metadata.textContent = `${kind} · ${model}${attempt}${time ? ` · ${time}` : ""}`;
+
+    const values = document.createElement("p");
+    values.className = "usage-call-values";
+    if (call.kind === "asr") {
+      values.textContent = `ASR 时长：${Number.isFinite(call.audio_duration_seconds) ? formatDuration(call.audio_duration_seconds) : "未报告"} · 按音频时长统计`;
+    } else {
+      values.textContent = `输入：${usageValue(call.input_tokens)} · 输出：${usageValue(call.output_tokens)} · 总计：${usageValue(call.total_tokens)} · 缓存输入：${usageValue(call.cached_input_tokens)}`;
+    }
+    row.append(title, metadata, values);
+
+    if (call.request_id) {
+      const requestId = document.createElement("p");
+      requestId.className = "usage-request-id";
+      requestId.textContent = `请求 ID：${call.request_id}`;
+      row.appendChild(requestId);
+    }
+    callsNode.appendChild(row);
+  }
 }
 
 function renderMarkdown(container, source) {
@@ -617,6 +734,7 @@ function renderJob(job) {
   $(".job-state span", card).textContent = job.stage;
   $(".job-progress b", card).style.width = `${job.progress}%`;
   $(".job-progress > span", card).textContent = `${job.progress}%`;
+  renderUsage(job, card);
   const extension = job.filename.split(".").pop()?.toUpperCase() || "AU";
   $(".job-file-icon", card).textContent = extension.slice(0, 4);
 

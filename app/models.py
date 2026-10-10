@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class JobStatus(StrEnum):
@@ -92,6 +93,38 @@ class ReviewSubmission(BaseModel):
     )
 
 
+class AIUsageCall(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    operation: str
+    kind: str
+    model: str
+    attempt: int = Field(default=1, ge=1)
+    status: str = "success"
+    http_status: int | None = None
+    request_id: str | None = None
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    cached_input_tokens: int | None = Field(default=None, ge=0)
+    audio_duration_seconds: float | None = Field(default=None, ge=0)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AIUsageSummary(BaseModel):
+    call_count: int
+    text_call_count: int
+    asr_call_count: int
+    mock_call_count: int
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    cached_input_tokens: int | None
+    missing_text_usage_calls: int
+    asr_duration_seconds: float | None
+    missing_asr_duration_calls: int
+    failed_call_count: int
+
+
 class Job(BaseModel):
     id: str
     filename: str
@@ -109,6 +142,7 @@ class Job(BaseModel):
     transcript: str | None = None
     minutes: str | None = None
     error: str | None = None
+    usage_calls: list[AIUsageCall] = Field(default_factory=list)
     review_status: ReviewStatus = ReviewStatus.idle
     review_stage: str = ""
     review_progress: int = Field(default=0, ge=0, le=100)
@@ -147,6 +181,44 @@ class Job(BaseModel):
         if not self.original_duration_seconds or self.compressed_duration_seconds is None:
             return None
         return self.compressed_duration_seconds / self.original_duration_seconds
+
+    @computed_field
+    @property
+    def usage_summary(self) -> AIUsageSummary:
+        real_calls = [call for call in self.usage_calls if call.status != "mock"]
+        text_calls = [call for call in real_calls if call.kind == "text"]
+        asr_calls = [call for call in real_calls if call.kind == "asr"]
+
+        def reported_sum(field: str) -> int | None:
+            values = [getattr(call, field) for call in text_calls]
+            known = [value for value in values if value is not None]
+            return sum(known) if known else None
+
+        durations = [
+            call.audio_duration_seconds for call in asr_calls
+            if call.status == "success" and call.audio_duration_seconds is not None
+        ]
+        return AIUsageSummary(
+            call_count=len(self.usage_calls),
+            text_call_count=len(text_calls),
+            asr_call_count=len(asr_calls),
+            mock_call_count=len(self.usage_calls) - len(real_calls),
+            input_tokens=reported_sum("input_tokens"),
+            output_tokens=reported_sum("output_tokens"),
+            total_tokens=reported_sum("total_tokens"),
+            cached_input_tokens=reported_sum("cached_input_tokens"),
+            missing_text_usage_calls=sum(
+                any(value is None for value in (
+                    call.input_tokens, call.output_tokens, call.total_tokens,
+                )) for call in text_calls
+            ),
+            asr_duration_seconds=round(sum(durations), 3) if durations else None,
+            missing_asr_duration_calls=sum(
+                call.status == "success" and call.audio_duration_seconds is None
+                for call in asr_calls
+            ),
+            failed_call_count=sum(call.status != "success" for call in real_calls),
+        )
 
 
 class HealthResponse(BaseModel):

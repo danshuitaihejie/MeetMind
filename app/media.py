@@ -50,6 +50,25 @@ class MediaProcessor:
         try:
             return float(json.loads(result.stdout)["format"]["duration"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            # Tiny MP3 tails can contain valid samples without a container duration.
+            frames_result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "a:0", "-show_frames",
+                    "-show_entries", "frame=nb_samples:stream=sample_rate", "-of", "json",
+                    str(path),
+                ],
+                capture_output=True, text=True, check=False,
+            )
+            try:
+                frames_payload = json.loads(frames_result.stdout)
+                sample_rate = int(frames_payload["streams"][0]["sample_rate"])
+                sample_count = sum(
+                    int(frame.get("nb_samples", 0)) for frame in frames_payload.get("frames", [])
+                )
+                if frames_result.returncode == 0 and sample_rate > 0 and sample_count > 0:
+                    return sample_count / sample_rate
+            except (KeyError, IndexError, TypeError, ValueError):
+                pass
             raise MediaProcessingError("媒体文件缺少可读取的音轨") from exc
 
     @staticmethod
@@ -149,7 +168,38 @@ class MediaProcessor:
                 result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "未知错误"
             )
             raise MediaProcessingError(f"长音频自动分段失败：{message}")
-        return chunks
+
+        valid_chunks: list[Path] = []
+        for chunk in chunks:
+            try:
+                MediaProcessor.probe_duration(chunk)
+            except MediaProcessingError:
+                if chunk != chunks[-1]:
+                    raise
+                # The MP3 segment muxer can emit a metadata-only final file at a frame boundary.
+                frame_result = subprocess.run(
+                    [
+                        "ffprobe", "-v", "error", "-select_streams", "a:0",
+                        "-show_frames", "-show_entries", "frame=nb_samples",
+                        "-of", "json", str(chunk),
+                    ],
+                    capture_output=True, text=True, check=False,
+                )
+                try:
+                    frame_data = json.loads(frame_result.stdout)
+                except (ValueError, TypeError):
+                    raise MediaProcessingError("无法验证末尾音频分段") from None
+                if (
+                    frame_result.returncode != 0 or not isinstance(frame_data, dict)
+                    or frame_data.get("frames", []) != []
+                ):
+                    raise
+                chunk.unlink(missing_ok=True)
+                continue
+            valid_chunks.append(chunk)
+        if not valid_chunks:
+            raise MediaProcessingError("长音频自动分段后没有可读取的音频片段")
+        return valid_chunks
 
     @staticmethod
     def extract_audio_clip(

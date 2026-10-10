@@ -59,6 +59,9 @@ def test_confirmed_correction_survives_summary_failure(tmp_path: Path) -> None:
     )
 
     class FailingAI:
+        def with_usage_recorder(self, recorder, operation_override=None):
+            return self
+
         def summarize(self, transcript: str, context: str) -> str:
             raise RuntimeError("temporary summary failure")
 

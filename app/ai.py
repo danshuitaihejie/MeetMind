@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import mimetypes
 import time
 from collections.abc import Callable
@@ -10,7 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
-from app.models import ReviewItem, ReviewSuggestion, TranscriptSegment, TranscriptToken
+from app.models import AIUsageCall, ReviewItem, ReviewSuggestion, TranscriptSegment, TranscriptToken
 
 
 class AIConfigurationError(RuntimeError):
@@ -29,10 +30,82 @@ class AIService:
         settings: Settings,
         transport: httpx.BaseTransport | None = None,
         sleeper: Callable[[float], None] = time.sleep,
+        usage_recorder: Callable[[AIUsageCall], None] | None = None,
+        operation_override: str | None = None,
     ) -> None:
         self.settings = settings
         self.transport = transport
         self.sleeper = sleeper
+        self.usage_recorder = usage_recorder
+        self.operation_override = operation_override
+
+    def with_usage_recorder(
+        self,
+        recorder: Callable[[AIUsageCall], None],
+        operation_override: str | None = None,
+    ) -> AIService:
+        """Use a separate client context so concurrent meetings cannot share a ledger."""
+        return AIService(
+            self.settings, self.transport, self.sleeper, recorder, operation_override,
+        )
+
+    @staticmethod
+    def _token_count(value: Any) -> int | None:
+        return value if type(value) is int and value >= 0 else None
+
+    def _record_response(
+        self,
+        operation: str,
+        kind: str,
+        model: str,
+        attempt: int,
+        status: str,
+        response: httpx.Response | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        if self.usage_recorder is None:
+            return
+        payload = payload or {}
+        usage = payload.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        details = usage.get("prompt_tokens_details")
+        details = details if isinstance(details, dict) else {}
+        input_tokens = self._token_count(usage.get("prompt_tokens"))
+        output_tokens = self._token_count(usage.get("completion_tokens"))
+        total_tokens = self._token_count(usage.get("total_tokens"))
+        if total_tokens is None and input_tokens is not None and output_tokens is not None:
+            total_tokens = input_tokens + output_tokens
+        duration = payload.get("duration")
+        if (
+            kind != "asr" or type(duration) not in (int, float)
+            or not math.isfinite(duration) or duration < 0
+        ):
+            duration = None
+        request_id = payload.get("trace_id") or payload.get("id")
+        if not isinstance(request_id, str) and response is not None:
+            request_id = response.headers.get("x-request-id")
+        self.usage_recorder(AIUsageCall(
+            operation=self.operation_override or operation,
+            kind=kind,
+            model=model,
+            attempt=attempt,
+            status=status,
+            http_status=response.status_code if response is not None else None,
+            request_id=request_id if isinstance(request_id, str) else None,
+            input_tokens=input_tokens if kind == "text" else None,
+            output_tokens=output_tokens if kind == "text" else None,
+            total_tokens=total_tokens if kind == "text" else None,
+            cached_input_tokens=(
+                self._token_count(details.get("cached_tokens")) if kind == "text" else None
+            ),
+            audio_duration_seconds=duration,
+        ))
+
+    def _record_mock(self, operation: str, kind: str) -> None:
+        model = (
+            self.settings.transcription_model if kind == "asr" else self.settings.summary_model
+        )
+        self._record_response(operation, kind, model, 1, "mock")
 
     def _ensure_configured(self) -> None:
         if not self.settings.minimax_api_key:
@@ -52,6 +125,9 @@ class AIService:
 
     def _post(self, path: str, **kwargs: Any) -> dict[str, Any]:
         self._ensure_configured()
+        operation = kwargs.pop("operation", "summary")
+        kind = "asr" if path == "/v1/speech_to_text" else "text"
+        model = (kwargs.get("data") or kwargs.get("json") or {}).get("model", "unknown")
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self.settings.minimax_api_key}"
         timeout = httpx.Timeout(connect=20, read=600, write=600, pool=20)
@@ -69,6 +145,7 @@ class AIService:
                     response = client.post(path, **kwargs)
                 last_network_error = None
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                self._record_response(operation, kind, model, attempt + 1, "network_error")
                 last_network_error = exc
                 if attempt < 2:
                     self.sleeper(2**attempt)
@@ -80,6 +157,23 @@ class AIService:
                 )
                 raise MiniMaxAPIError(f"无法连接 MiniMax API：{message}") from exc
 
+            try:
+                response_payload = response.json()
+            except ValueError:
+                response_payload = None
+            valid_payload = response_payload if isinstance(response_payload, dict) else None
+            status = "success"
+            if not response.is_success:
+                status = "http_error"
+            elif valid_payload is None:
+                status = "invalid_response"
+            else:
+                base = valid_payload.get("base_resp")
+                if isinstance(base, dict) and base.get("status_code") not in (None, 0):
+                    status = "api_error"
+            self._record_response(
+                operation, kind, model, attempt + 1, status, response, valid_payload,
+            )
             if response.status_code == 429 or response.status_code >= 500:
                 if attempt < 2:
                     self.sleeper(2**attempt)
@@ -114,6 +208,7 @@ class AIService:
     def transcribe(self, audio_path: Path, context: str = "") -> str:
         del context  # MiniMax ASR currently has no prompt/context field.
         if self.settings.mock_ai:
+            self._record_mock("transcription", "asr")
             return (
                 "主持人：今天确认 MeetMind 的第一版流程。"
                 "产品负责人：上传音视频后先删除静音，再以一点五倍速压缩，随后完成转写。"
@@ -124,6 +219,7 @@ class AIService:
         with audio_path.open("rb") as audio_file:
             payload = self._post(
                 "/v1/speech_to_text",
+                operation="transcription",
                 data={
                     "model": self.settings.transcription_model,
                     "response_format": "json",
@@ -139,6 +235,7 @@ class AIService:
     def transcribe_detailed(self, audio_path: Path) -> list[TranscriptSegment]:
         """Transcribe original-speed audio with timestamps for optional review."""
         if self.settings.mock_ai:
+            self._record_mock("review_transcription", "asr")
             tokens = [
                 TranscriptToken(
                     start_seconds=0,
@@ -180,6 +277,7 @@ class AIService:
         with audio_path.open("rb") as audio_file:
             payload = self._post(
                 "/v1/speech_to_text",
+                operation="review_transcription",
                 data={
                     "model": self.settings.transcription_model,
                     "response_format": "verbose_json",
@@ -292,9 +390,12 @@ class AIService:
             raise MiniMaxAPIError("MiniMax 校对模型返回格式不正确")
         return payload
 
-    def _chat(self, system: str, user: str, max_tokens: int = 4096) -> str:
+    def _chat(
+        self, system: str, user: str, max_tokens: int = 4096, operation: str = "summary",
+    ) -> str:
         payload = self._post(
             "/v1/chat/completions",
+            operation=operation,
             json={
                 "model": self.settings.summary_model,
                 "messages": [
@@ -323,6 +424,7 @@ class AIService:
     ) -> list[ReviewSuggestion]:
         """Estimate suspicious ASR segments; MiniMax ASR itself exposes no confidence."""
         if self.settings.mock_ai:
+            self._record_mock("review_detection", "text")
             return [
                 ReviewSuggestion(
                     segment_index=0,
@@ -361,7 +463,7 @@ class AIService:
             },
             ensure_ascii=False,
         )
-        payload = self._json_from_content(self._chat(system, user))
+        payload = self._json_from_content(self._chat(system, user, operation="review_detection"))
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return []
@@ -387,6 +489,7 @@ class AIService:
         if not items:
             return []
         if self.settings.mock_ai:
+            self._record_mock("review_refinement", "text")
             return [
                 ReviewSuggestion(
                     segment_index=item.segment_index,
@@ -428,7 +531,7 @@ class AIService:
             },
             ensure_ascii=False,
         )
-        payload = self._json_from_content(self._chat(system, user))
+        payload = self._json_from_content(self._chat(system, user, operation="review_refinement"))
         raw_candidates = payload.get("candidates")
         if not isinstance(raw_candidates, list):
             return []
@@ -451,6 +554,7 @@ class AIService:
 
     def summarize(self, transcript: str, context: str = "") -> str:
         if self.settings.mock_ai:
+            self._record_mock("summary", "text")
             return """# MeetMind 第一版评审会
 
 ## 会议摘要

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.corrections import CorrectionMemory, CorrectionRecord
-from app.models import Job, ReviewStatus
+from app.models import AIUsageCall, Job, ReviewStatus
 
 
 class JobStore:
@@ -109,3 +109,11 @@ class JobStore:
             job.updated_at = datetime.now(UTC)
             self._persist(job)
             return job.model_copy(deep=True)
+
+    def record_usage(self, job_id: str, call: AIUsageCall) -> None:
+        """Persist each response immediately, including failed/repeated attempts."""
+        with self._lock:
+            job = self._jobs[job_id]
+            job.usage_calls.append(call.model_copy(deep=True))
+            job.updated_at = datetime.now(UTC)
+            self._persist(job)

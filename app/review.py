@@ -130,6 +130,7 @@ def review_job(
     job = store.get(job_id)
     if not job or not job.transcript:
         return
+    ai = ai.with_usage_recorder(lambda call: store.record_usage(job_id, call))
 
     review_dir = store.job_dir(job_id) / "review"
     try:
@@ -390,6 +391,10 @@ def apply_review_corrections(
             transcript=transcript,
             review_items=list(items_by_id.values()),
             review_manual_corrections=manual_corrections,
+        )
+        ai = ai.with_usage_recorder(
+            lambda call: store.record_usage(job_id, call),
+            operation_override="summary_regeneration",
         )
         minutes = ai.summarize(transcript, job.context)
         (job_dir / "minutes.md").write_text(minutes, encoding="utf-8")
