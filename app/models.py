@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, computed_field, model_validator
@@ -51,6 +51,7 @@ class ReviewSuggestion(BaseModel):
 class ReviewItem(BaseModel):
     id: str
     segment_index: int = Field(ge=0)
+    term_start: int | None = Field(default=None, ge=0)
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(ge=0)
     speaker: str | None = None
@@ -62,6 +63,7 @@ class ReviewItem(BaseModel):
     ocr_text: list[str] = Field(default_factory=list)
     frame_count: int = Field(default=0, ge=0)
     correction_term: str | None = None
+    source: Literal["ai", "agent"] = "ai"
 
 
 class ReviewCorrection(BaseModel):
@@ -149,6 +151,7 @@ class Job(BaseModel):
     review_items: list[ReviewItem] = Field(default_factory=list)
     review_manual_corrections: list[ManualReviewCorrection] = Field(default_factory=list)
     review_error: str | None = None
+    review_applied: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

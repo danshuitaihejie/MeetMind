@@ -39,6 +39,48 @@ uv run uvicorn app.main:app --reload
 
 打开 <http://127.0.0.1:8000>。
 
+## 命令行调用（MCP / Skill）
+
+`meetmind` 现在也能直接处理本地文件，无需先启动网页服务。推荐通过 `uv run` 调用：
+
+```bash
+uv run meetmind process /absolute/path/meeting.mp4 --speed 1.5 --context "项目周会"
+uv run meetmind show <任务ID>
+uv run meetmind list
+```
+
+`process` 会同步运行至成功或失败；数据子命令返回任务时，标准输出是一行 JSON，包含任务状态、转写、纪要、AI 用量，以及 `artifacts` 中已生成文件的绝对路径。调用错误只写入标准错误，格式也是 JSON。退出码 `0` 表示命令成功，`1` 表示处理或校对任务失败，`2` 表示参数、输入文件或任务 ID 等调用错误。MCP 工具或 Skill 可直接解析标准输出和退出码。输出较大时可从 `artifacts` 路径读取所需文件。
+
+```bash
+# 关闭静音删除；背景文字也可放在 UTF-8 文件中
+uv run meetmind process /absolute/path/meeting.wav --no-trim-silence --context-file context.txt
+
+# 使用独立的数据目录；--data-dir 必须放在子命令之前
+uv run meetmind --data-dir /absolute/path/meetmind-data process /absolute/path/meeting.mp4
+
+# 可选的校对流程
+uv run meetmind review <任务ID>
+uv run meetmind pending <任务ID>
+uv run meetmind search <任务ID> "待核对词"
+uv run meetmind flag <任务ID> "待核对词" --segment-index 0 --term-start 12 --reason "原声仍无法确认"
+uv run meetmind apply <任务ID> --input corrections.json
+```
+
+`review` / `show` 的 JSON 包含每个疑似词的上下文、AI 建议、置信度、OCR 文字，以及 `evidence.audio` / `evidence.frames` 的本地路径。`pending` 只返回尚未确认的词和证据，避免重复读取完整转写与纪要。`search` 会返回词语出现的位置、时间范围和原速音频路径，便于 agent 主动检查 AI 没标出的错词。`pending_review_count` 表示仍待确认的疑似词数量。
+
+Agent 应只提交已核实的纠偏；拿不准的 `item_id` 不写入 `corrections`，会继续保持待确认状态，并在网页校对面板提示用户处理。对主动搜索发现但无法确定的词，使用 `flag` 把 `search` 返回的 `segment_index` 和 `term_start` 所指位置加入人工待确认列表；`--suggested` 可附候选写法，但不会自动应用。确认原词正确时，把 `replacement` 设为 `original_term`；这会标记为已确认，但不会记入词语纠正库。后续 CLI `apply` 可以只提交新确认的项，先前修正会自动保留。用户也可以在网页端主动搜索并修正 AI 没标出的词。
+
+`apply` 的输入格式与网页 API 的校对提交格式一致，例如：
+
+```json
+{
+  "corrections": [{"item_id": "校对项ID", "replacement": "确认后的词"}],
+  "manual_corrections": []
+}
+```
+
+`--context-file -` 和 `--input -` 可以从标准输入读取背景文字或 JSON。`retry <任务ID>` 可重新处理失败任务；`uv run meetmind serve` 启动网页服务，`--host`、`--port`、`--reload` 可配置服务。运行前仍需配置 `MINIMAX_API_KEY`，以及安装 FFmpeg/FFprobe。
+
 macOS 安装 FFmpeg：
 
 ```bash

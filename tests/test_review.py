@@ -7,6 +7,8 @@ from app.models import (
     Job,
     JobStatus,
     ManualReviewCorrection,
+    ReviewCorrection,
+    ReviewItem,
     ReviewStatus,
     TranscriptSegment,
     TranscriptToken,
@@ -40,6 +42,43 @@ def test_manual_search_distinguishes_repeated_terms(tmp_path: Path) -> None:
     assert [match.term_start for match in matches] == [0, 3]
     assert matches[0].start_seconds == 1
     assert matches[1].start_seconds == 2
+
+
+def test_agent_flag_correction_targets_selected_occurrence(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs")
+    item = ReviewItem(
+        id="second-project", segment_index=0, term_start=3,
+        start_seconds=2, end_seconds=2.5, context_text="项目和项目",
+        original_term="项目", suggested_term="工程", confidence=0,
+        reason="第二处待核对", source="agent",
+    )
+    store.create(Job(
+        id="repeated", filename="meeting.wav", status=JobStatus.completed,
+        transcript="项目和项目", review_status=ReviewStatus.ready, review_items=[item],
+    ))
+    review_dir = store.job_dir("repeated") / "review"
+    review_dir.mkdir()
+    segment = TranscriptSegment(index=0, start_seconds=0, end_seconds=3, text="项目和项目")
+    (review_dir / "segments.json").write_text(
+        json.dumps([segment.model_dump()]), encoding="utf-8",
+    )
+    (store.job_dir("repeated") / "transcript.txt").write_text("项目和项目", encoding="utf-8")
+
+    class SummaryAI:
+        def with_usage_recorder(self, recorder, operation_override=None):
+            return self
+
+        def summarize(self, transcript: str, context: str) -> str:
+            return transcript
+
+    apply_review_corrections(
+        "repeated", [ReviewCorrection(item_id=item.id, replacement="工程")], [], store,
+        SummaryAI(),
+    )
+
+    assert "项目和工程" in store.get("repeated").transcript
+    record = store.corrections.records()[0]
+    assert (record.term_start, record.source) == (3, "agent")
 
 
 def test_confirmed_correction_survives_summary_failure(tmp_path: Path) -> None:

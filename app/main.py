@@ -24,24 +24,10 @@ from app.ocr import OCRService
 from app.pipeline import process_job
 from app.review import apply_review_corrections, review_job, search_review_term
 from app.store import JobStore
+from app.validation import ALLOWED_EXTENSIONS, MAX_CONTEXT_CHARS, SPEED_OPTIONS
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-ALLOWED_EXTENSIONS = {
-    ".mp3",
-    ".mp4",
-    ".m4a",
-    ".mov",
-    ".mpeg",
-    ".mpga",
-    ".wav",
-    ".webm",
-    ".mkv",
-    ".aac",
-    ".flac",
-    ".ogg",
-}
-SPEED_OPTIONS = {1.0, 1.25, 1.5, 1.75, 2.0}
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -100,7 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=415, detail="不支持此文件格式")
         if speed not in SPEED_OPTIONS:
             raise HTTPException(status_code=422, detail="加速倍率必须是 1、1.25、1.5、1.75 或 2")
-        if len(context) > 4000:
+        if len(context) > MAX_CONTEXT_CHARS:
             raise HTTPException(status_code=422, detail="会议背景不能超过 4000 个字符")
 
         job_id = uuid.uuid4().hex
@@ -164,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_items=[],
             review_manual_corrections=[],
             review_error=None,
+            review_applied=False,
         )
         background_tasks.add_task(process_job, job_id, source_files[0], store, media, ai)
         return retried

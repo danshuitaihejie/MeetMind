@@ -93,6 +93,19 @@ def _find_occurrences(text: str, term: str) -> list[int]:
         cursor = index + len(term)
 
 
+def _item_term_position(segment: TranscriptSegment | None, item: ReviewItem) -> int | None:
+    if segment is None:
+        return None
+    position = (
+        item.term_start if item.term_start is not None else segment.text.find(item.original_term)
+    )
+    if position < 0 or (
+        segment.text[position:position + len(item.original_term)] != item.original_term
+    ):
+        return None
+    return position
+
+
 def search_review_term(
     job_id: str,
     term: str,
@@ -148,6 +161,7 @@ def review_job(
             review_progress=8,
             review_items=[],
             review_error=None,
+            review_applied=False,
         )
         review_audio = review_dir / "original_speed.mp3"
         media.compress(input_path, review_audio, speed=1.0, trim_silence=False)
@@ -206,6 +220,7 @@ def review_job(
                 ReviewItem(
                     id=uuid.uuid4().hex[:12],
                     segment_index=segment.index,
+                    term_start=segment.text.find(suggestion.original_term.strip()),
                     start_seconds=term_start,
                     end_seconds=term_end,
                     speaker=segment.speaker,
@@ -313,9 +328,14 @@ def apply_review_corrections(
             replacement = correction.replacement.strip()
             if not replacement:
                 continue
+            if replacement == item.original_term:
+                # A confirmed "keep original" resolves the item without learning an identity rule.
+                item.correction_term = replacement
+                continue
             segment = segments_by_index.get(item.segment_index)
-            if segment and item.original_term in segment.text:
-                term_start = segment.text.index(item.original_term)
+            position = _item_term_position(segment, item)
+            if segment is not None and position is not None:
+                term_start = position
                 term_end = term_start + len(item.original_term)
                 edits[(segment.index, term_start, term_end)] = replacement
                 item.correction_term = replacement
@@ -347,6 +367,10 @@ def apply_review_corrections(
                     "manual" if any(
                         item.segment_index == segment_index and item.term_start == term_start
                         for item in manual_corrections
+                    ) else "agent" if any(
+                        item.source == "agent" and item.segment_index == segment_index
+                        and _item_term_position(segment, item) == term_start
+                        for item in items_by_id.values()
                     ) else "suggested"
                 ),
             ))
@@ -358,8 +382,9 @@ def apply_review_corrections(
 
         for item in items_by_id.values():
             segment = segments_by_index.get(item.segment_index)
-            if segment and item.original_term in segment.text:
-                term_start = segment.text.index(item.original_term)
+            position = _item_term_position(segment, item)
+            if segment is not None and position is not None:
+                term_start = position
                 edit = (segment.index, term_start, term_start + len(item.original_term))
                 if edit in edits:
                     item.correction_term = edits[edit]
@@ -391,6 +416,7 @@ def apply_review_corrections(
             transcript=transcript,
             review_items=list(items_by_id.values()),
             review_manual_corrections=manual_corrections,
+            review_applied=True,
         )
         ai = ai.with_usage_recorder(
             lambda call: store.record_usage(job_id, call),
@@ -398,11 +424,14 @@ def apply_review_corrections(
         )
         minutes = ai.summarize(transcript, job.context)
         (job_dir / "minutes.md").write_text(minutes, encoding="utf-8")
+        pending_count = sum(item.correction_term is None for item in items_by_id.values())
         store.update(
             job_id,
             minutes=minutes,
-            review_status=ReviewStatus.completed,
-            review_stage="校对已应用",
+            review_status=ReviewStatus.ready if pending_count else ReviewStatus.completed,
+            review_stage=(
+                f"已应用修正，仍有 {pending_count} 项待确认" if pending_count else "校对已应用"
+            ),
             review_progress=100,
             review_items=list(items_by_id.values()),
             review_manual_corrections=manual_corrections,

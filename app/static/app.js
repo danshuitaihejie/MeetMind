@@ -412,16 +412,19 @@ function appendHighlightedContext(container, contextText, originalTerm) {
 
 function renderReviewItem(job, item) {
   const article = document.createElement("article");
-  article.className = `review-item ${item.confidence < 0.75 ? "needs-review" : "supported"}`;
+  const pending = item.correction_term == null;
+  article.className = `review-item ${pending ? "needs-review" : "supported"}`;
 
   const header = document.createElement("div");
   header.className = "review-item-heading";
   const time = document.createElement("strong");
   time.textContent = `${formatDuration(item.start_seconds)} – ${formatDuration(item.end_seconds)}`;
   const confidence = document.createElement("span");
-  confidence.textContent = item.confidence < 0.75
-    ? `请人工确认 · ${Math.round(item.confidence * 100)}%`
-    : `OCR/上下文支持 · ${Math.round(item.confidence * 100)}%`;
+  confidence.textContent = pending
+    ? item.source === "agent"
+      ? "Agent 标记 · 待人工确认"
+      : `待确认 · AI 估值 ${Math.round(item.confidence * 100)}%`
+    : "已确认";
   header.append(time, confidence);
   article.appendChild(header);
 
@@ -474,7 +477,10 @@ function renderReviewItem(job, item) {
   input.type = "text";
   input.maxLength = 100;
   input.autocomplete = "off";
-  input.value = item.correction_term || item.suggested_term || item.original_term;
+  input.value = item.correction_term || "";
+  input.placeholder = item.suggested_term
+    ? `AI 建议：${item.suggested_term}`
+    : "输入确认后的词";
   label.append(labelText, input);
   article.appendChild(label);
 
@@ -659,7 +665,8 @@ function renderReview(job, card) {
       empty.textContent = "原速音频复核完成，未发现明显需要人工确认的词。";
       list.appendChild(empty);
     } else {
-      $("strong", listHeading).textContent = `AI 标记的词 · ${job.review_items.length}`;
+      const pendingCount = job.review_items.filter((item) => item.correction_term == null).length;
+      $("strong", listHeading).textContent = `疑似词 · 待确认 ${pendingCount} / ${job.review_items.length}`;
       listHeading.classList.remove("hidden");
       job.review_items.forEach((item) => list.appendChild(renderReviewItem(job, item)));
       apply.classList.remove("hidden");
@@ -680,6 +687,11 @@ function renderReview(job, card) {
         original_term: row.dataset.originalTerm,
         replacement: $("input", row).value.trim(),
       })).filter((item) => item.replacement);
+      if (!corrections.length && !manualCorrections.length) {
+        error.textContent = "请先确认一个疑似词，或主动搜索并添加一处纠偏。";
+        error.classList.remove("hidden");
+        return;
+      }
       apply.disabled = true;
       apply.textContent = "正在应用修正…";
       try {

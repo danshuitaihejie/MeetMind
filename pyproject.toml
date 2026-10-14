@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-meetmind = "app.main:run"
+meetmind = "app.cli:main"
 
 [build-system]
 requires = ["hatchling"]

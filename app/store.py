@@ -24,18 +24,21 @@ class JobStore:
         """Recover confirmations from jobs created before shared correction memory."""
         records: list[CorrectionRecord] = []
         for job in self._jobs.values():
-            if job.review_status != ReviewStatus.completed:
+            if job.review_status != ReviewStatus.completed and not job.review_applied:
                 continue
             for item in job.review_items:
-                if item.correction_term is not None:
+                if item.correction_term is not None and item.correction_term != item.original_term:
                     records.append(CorrectionRecord(
                         job_id=job.id,
                         segment_index=item.segment_index,
-                        term_start=max(0, item.context_text.find(item.original_term)),
+                        term_start=(
+                            item.term_start if item.term_start is not None
+                            else max(0, item.context_text.find(item.original_term))
+                        ),
                         original_term=item.original_term,
                         replacement=item.correction_term,
                         context_text=item.context_text,
-                        source="suggested",
+                        source="agent" if item.source == "agent" else "suggested",
                         created_at=job.updated_at.isoformat(),
                     ))
             contexts: dict[int, str] = {}
@@ -68,11 +71,14 @@ class JobStore:
 
     def _load(self) -> None:
         for path in self.root.glob("*/job.json"):
-            try:
-                job = Job.model_validate_json(path.read_text(encoding="utf-8"))
-                self._jobs[job.id] = job
-            except (OSError, ValueError):
-                continue
+            self._load_one(path)
+
+    def _load_one(self, path: Path) -> None:
+        try:
+            job = Job.model_validate_json(path.read_text(encoding="utf-8"))
+            self._jobs[job.id] = job
+        except (OSError, ValueError):
+            pass
 
     def job_dir(self, job_id: str) -> Path:
         path = self.root / job_id
@@ -93,11 +99,14 @@ class JobStore:
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
+            if Path(job_id).name == job_id and job_id not in {".", ".."}:
+                self._load_one(self.root / job_id / "job.json")
             job = self._jobs.get(job_id)
             return job.model_copy(deep=True) if job else None
 
     def list(self) -> list[Job]:
         with self._lock:
+            self._load()
             jobs = sorted(self._jobs.values(), key=lambda item: item.created_at, reverse=True)
             return [job.model_copy(deep=True) for job in jobs]
 
