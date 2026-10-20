@@ -91,7 +91,7 @@ class ReviewSubmission(BaseModel):
     corrections: list[ReviewCorrection] = Field(max_length=20)
     manual_corrections: list[ManualReviewCorrection] = Field(
         default_factory=list,
-        max_length=20,
+        max_length=200,
     )
 
 

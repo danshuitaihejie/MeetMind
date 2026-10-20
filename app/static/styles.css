@@ -235,7 +235,9 @@ body.has-jobs .jobs-section { margin-top: 18px; }
 .review-correction-field span { font-size: 10px; font-weight: 700; }
 .review-correction-field input { width: min(100%, 360px); padding: 10px 11px; border: 1px solid var(--line); background: var(--white); color: var(--ink); font: 12px/1.6 ui-monospace, "PingFang SC", monospace; }
 .review-correction-field input:focus { border-color: var(--accent); outline: 0; }
-.review-keep { margin-top: 8px; padding: 0 0 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
+.review-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 15px; margin-top: 10px; }
+.review-suggestion { padding: 8px 11px; border: 0; background: var(--accent); color: var(--white); cursor: pointer; font-size: 10px; font-weight: 700; text-align: left; }
+.review-keep { padding: 0 0 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .manual-review { margin-top: 18px; padding: 17px; border: 1px dashed var(--line); background: var(--white); }
 .manual-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .manual-review-heading strong { font-size: 12px; }
@@ -249,8 +251,15 @@ body.has-jobs .jobs-section { margin-top: 18px; }
 .manual-review-form button:disabled { cursor: wait; opacity: .55; }
 .manual-review-error { color: #ad2e14 !important; }
 .manual-review-results { display: grid; gap: 6px; margin-top: 10px; }
-.manual-review-match { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--line); background: #f8f5ee; color: var(--muted); text-align: left; cursor: pointer; }
-.manual-review-match:hover { border-color: var(--accent); }
+.manual-review-selection { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; background: var(--paper-deep); }
+.manual-review-selection label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 10px; font-weight: 700; }
+.manual-review-selection span { color: var(--muted); font-size: 10px; }
+.manual-review-selection button { margin-left: auto; padding: 8px 10px; border: 0; background: var(--accent); color: var(--white); cursor: pointer; font-size: 10px; font-weight: 700; }
+.manual-review-selection button:disabled { cursor: default; opacity: .5; }
+.manual-review-match-list { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
+.manual-review-match { display: grid; grid-template-columns: 16px 94px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid var(--line); background: #f8f5ee; color: var(--muted); text-align: left; cursor: pointer; }
+.manual-review-match:hover, .manual-review-match:focus-within, .manual-review-match:has(input:checked) { border-color: var(--accent); }
+.manual-review-match input, .manual-review-selection input { accent-color: var(--accent); }
 .manual-review-match strong { color: var(--accent-dark); font: 700 9px ui-monospace, monospace; }
 .manual-review-match span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .manual-review-match mark, .manual-pending-item mark { background: #ffe6a7; color: #7a2e14; }

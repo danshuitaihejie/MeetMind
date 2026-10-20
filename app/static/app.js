@@ -387,8 +387,10 @@ async function requestJSON(url, options = {}) {
   return response.json();
 }
 
-function appendHighlightedContext(container, contextText, originalTerm) {
-  const termIndex = contextText.indexOf(originalTerm);
+function appendHighlightedContext(container, contextText, originalTerm, termStart = null) {
+  const termIndex = Number.isInteger(termStart)
+    && contextText.slice(termStart, termStart + originalTerm.length) === originalTerm
+    ? termStart : contextText.indexOf(originalTerm);
   if (termIndex < 0) {
     container.appendChild(document.createTextNode(contextText.slice(0, 60)));
     return;
@@ -452,7 +454,7 @@ function renderReviewItem(job, item) {
   const prefix = document.createElement("span");
   prefix.textContent = "附近上下文：";
   original.appendChild(prefix);
-  appendHighlightedContext(original, item.context_text, item.original_term);
+  appendHighlightedContext(original, item.context_text, item.original_term, item.term_start);
   article.appendChild(original);
 
   if (item.ocr_text.length) {
@@ -484,12 +486,27 @@ function renderReviewItem(job, item) {
   label.append(labelText, input);
   article.appendChild(label);
 
+  const actions = document.createElement("div");
+  actions.className = "review-item-actions";
+  if (pending && item.source === "ai" && item.suggested_term) {
+    const suggestion = document.createElement("button");
+    suggestion.className = "review-suggestion";
+    suggestion.type = "button";
+    suggestion.textContent = `填入 AI 建议：${item.suggested_term}`;
+    suggestion.addEventListener("click", () => {
+      input.value = item.suggested_term;
+      input.focus();
+    });
+    actions.appendChild(suggestion);
+  }
+
   const keep = document.createElement("button");
   keep.className = "review-keep";
   keep.type = "button";
   keep.textContent = "保留原词";
   keep.addEventListener("click", () => { input.value = item.original_term; });
-  article.appendChild(keep);
+  actions.appendChild(keep);
+  article.appendChild(actions);
   return article;
 }
 
@@ -521,7 +538,7 @@ function addManualPending(container, correction, apply, contextText = "") {
   copy.append(title, replacement);
   if (contextText) {
     const context = document.createElement("p");
-    appendHighlightedContext(context, contextText, correction.original_term);
+    appendHighlightedContext(context, contextText, correction.original_term, correction.term_start);
     copy.appendChild(context);
   }
 
@@ -578,16 +595,49 @@ function setupManualReview(job, panel, apply) {
         error.classList.remove("hidden");
         return;
       }
-      matches.forEach((match) => {
-        const row = document.createElement("button");
+      const selection = document.createElement("div");
+      selection.className = "manual-review-selection";
+      const selectAllLabel = document.createElement("label");
+      const selectAll = document.createElement("input");
+      selectAll.type = "checkbox";
+      selectAllLabel.append(selectAll, document.createTextNode("全选当前结果"));
+      const count = document.createElement("span");
+      const addSelected = document.createElement("button");
+      addSelected.type = "button";
+      selection.append(selectAllLabel, count, addSelected);
+
+      const list = document.createElement("div");
+      list.className = "manual-review-match-list";
+      const choices = matches.map((match, index) => {
+        const row = document.createElement("label");
         row.className = "manual-review-match";
-        row.type = "button";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
         const time = document.createElement("strong");
-        time.textContent = `${formatDuration(match.start_seconds)} 选择此处`;
+        time.textContent = `第 ${index + 1} 处 · ${formatDuration(match.start_seconds)}`;
         const context = document.createElement("span");
-        appendHighlightedContext(context, match.context_text, match.original_term);
-        row.append(time, context);
-        row.addEventListener("click", () => {
+        appendHighlightedContext(context, match.context_text, match.original_term, match.term_start);
+        row.append(checkbox, time, context);
+        checkbox.addEventListener("change", updateSelection);
+        list.appendChild(row);
+        return { match, checkbox };
+      });
+
+      function updateSelection() {
+        const selectedCount = choices.filter(({ checkbox }) => checkbox.checked).length;
+        selectAll.checked = selectedCount === choices.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < choices.length;
+        count.textContent = `已选 ${selectedCount} / ${choices.length}`;
+        addSelected.textContent = `加入选中位置（${selectedCount}）`;
+        addSelected.disabled = selectedCount === 0;
+      }
+
+      selectAll.addEventListener("change", () => {
+        choices.forEach(({ checkbox }) => { checkbox.checked = selectAll.checked; });
+        updateSelection();
+      });
+      addSelected.addEventListener("click", () => {
+        choices.filter(({ checkbox }) => checkbox.checked).forEach(({ match }) => {
           addManualPending(
             pending,
             {
@@ -599,12 +649,13 @@ function setupManualReview(job, panel, apply) {
             apply,
             match.context_text,
           );
-          original.value = "";
-          replacement.value = "";
-          results.replaceChildren();
         });
-        results.appendChild(row);
+        original.value = "";
+        replacement.value = "";
+        results.replaceChildren();
       });
+      updateSelection();
+      results.append(selection, list);
     } catch (requestError) {
       error.textContent = requestError.message;
       error.classList.remove("hidden");

@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261020-5" />
   </head>
   <body>
     <header class="topbar">
@@ -205,7 +205,7 @@
                   <strong>主动纠偏：修正 AI 没标出的词</strong>
                   <span>不限置信度</span>
                 </div>
-                <p>输入转写中的原词和正确写法，再从短上下文中选择准确位置。</p>
+                <p>输入转写中的原词和正确写法，再勾选一处、多处或全选当前结果。每次搜索最多显示前 30 处。</p>
                 <form class="manual-review-form">
                   <label>
                     <span>原词 / 短语</span>
@@ -226,7 +226,7 @@
               </div>
               <div class="review-list"></div>
               <p class="review-description">
-                确认的词语修正会保存在本地，供后续转写自动纠正。
+                点击“填入 AI 建议”只会填写修正词；确认后点击下方按钮，才会保存修正并重新生成纪要。
               </p>
               <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
             </div>
@@ -239,6 +239,6 @@
       <span>MeetMind</span>
       <p>更少回放，更多推进。</p>
     </footer>
-    <script src="/assets/app.js" defer></script>
+    <script src="/assets/app.js?v=20261020-5" defer></script>
   </body>
 </html>
