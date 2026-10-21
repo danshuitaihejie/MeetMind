@@ -423,11 +423,10 @@ def apply_review_corrections(
             operation_override="summary_regeneration",
         )
         minutes = ai.summarize(transcript, job.context)
-        (job_dir / "minutes.md").write_text(minutes, encoding="utf-8")
+        store.save_minutes(job_id, minutes, regenerated=True)
         pending_count = sum(item.correction_term is None for item in items_by_id.values())
         store.update(
             job_id,
-            minutes=minutes,
             review_status=ReviewStatus.ready if pending_count else ReviewStatus.completed,
             review_stage=(
                 f"已应用修正，仍有 {pending_count} 项待确认" if pending_count else "校对已应用"

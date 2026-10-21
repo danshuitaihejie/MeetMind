@@ -54,6 +54,34 @@ def test_legacy_sentence_review_job_stays_visible() -> None:
     assert job.review_stage == "需重新运行词级校对"
 
 
+def test_minutes_versions_survive_restart_and_legacy_jobs(tmp_path: Path) -> None:
+    store = create_app(Settings(data_dir=tmp_path, mock_ai=True)).state.store
+    store.create(Job(id="versions", filename="meeting.wav"))
+    store.save_minutes("versions", "# 原始结论")
+    store.save_minutes("versions", "# 修正结论", regenerated=True)
+    store.save_minutes("versions", "# 再次修正", regenerated=True)
+
+    legacy = Job.model_validate({
+        "id": "legacy", "filename": "old.wav", "minutes": "# 已保存纪要",
+    })
+    store.create(legacy)
+    store.save_minutes("legacy", "# 新纪要", regenerated=True)
+
+    restarted = create_app(Settings(data_dir=tmp_path, mock_ai=True)).state.store
+    versions = restarted.get("versions")
+    assert [version.content for version in versions.minutes_versions] == [
+        "# 原始结论", "# 修正结论", "# 再次修正",
+    ]
+    assert [version.source for version in versions.minutes_versions] == [
+        "initial", "regenerated", "regenerated",
+    ]
+    assert versions.minutes == "# 再次修正"
+    assert (restarted.job_dir("versions") / "minutes.md").read_text() == "# 再次修正"
+    assert [version.source for version in restarted.get("legacy").minutes_versions] == [
+        "legacy", "regenerated",
+    ]
+
+
 def test_rejects_unsupported_upload(tmp_path: Path) -> None:
     app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
     with TestClient(app) as client:
@@ -83,6 +111,8 @@ def test_end_to_end_mock_pipeline(tmp_path: Path) -> None:
         assert job["status"] == "completed"
         assert job["compressed_size_bytes"] > 0
         assert "MeetMind" in job["minutes"]
+        assert len(job["minutes_versions"]) == 1
+        assert job["minutes_versions"][0]["source"] == "initial"
         assert client.get(f"/api/jobs/{job_id}/audio").status_code == 200
 
 
@@ -128,6 +158,7 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
             data={"speed": "1.5", "trim_silence": "false"},
         ).json()
         job_id = created["id"]
+        original_minutes = client.get(f"/api/jobs/{job_id}").json()["minutes"]
         review_response = client.post(f"/api/jobs/{job_id}/review")
         assert review_response.status_code == 202
         reviewed = client.get(f"/api/jobs/{job_id}").json()
@@ -168,6 +199,16 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
         )
         assert apply_response.status_code == 202
         corrected = client.get(f"/api/jobs/{job_id}").json()
+        assert len(corrected["minutes_versions"]) == 2
+        assert corrected["minutes_versions"][0]["content"] == original_minutes
+        assert corrected["minutes_versions"][0]["source"] == "initial"
+        assert corrected["minutes_versions"][1]["content"] == corrected["minutes"]
+        assert corrected["minutes_versions"][1]["source"] == "regenerated"
+        first_download = client.get(f"/api/jobs/{job_id}/minutes/1")
+        assert first_download.text == original_minutes
+        assert "minutes-v1.md" in first_download.headers["content-disposition"]
+        assert client.get(f"/api/jobs/{job_id}/minutes").text == corrected["minutes"]
+        assert client.get(f"/api/jobs/{job_id}/minutes/3").status_code == 404
 
     assert corrected["review_status"] == "completed"
     assert "MeetMind" in corrected["transcript"]
@@ -204,6 +245,7 @@ def test_enhanced_review_and_apply_correction(tmp_path: Path) -> None:
     }
 
     restarted_app = create_app(Settings(data_dir=tmp_path / "runtime", mock_ai=True))
+    assert restarted_app.state.store.get(job_id).minutes_versions[0].content == original_minutes
     with TestClient(restarted_app) as client, sample.open("rb") as audio:
         created_again = client.post(
             "/api/jobs",

@@ -127,6 +127,12 @@ class AIUsageSummary(BaseModel):
     failed_call_count: int
 
 
+class MinutesVersion(BaseModel):
+    content: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source: Literal["initial", "regenerated", "legacy"]
+
+
 class Job(BaseModel):
     id: str
     filename: str
@@ -143,6 +149,7 @@ class Job(BaseModel):
     compressed_size_bytes: int | None = None
     transcript: str | None = None
     minutes: str | None = None
+    minutes_versions: list[MinutesVersion] = Field(default_factory=list)
     error: str | None = None
     usage_calls: list[AIUsageCall] = Field(default_factory=list)
     review_status: ReviewStatus = ReviewStatus.idle
@@ -161,6 +168,14 @@ class Job(BaseModel):
         """Keep old jobs visible, but require a fresh word-level review."""
         if not isinstance(value, dict):
             return value
+        if value.get("minutes") and not value.get("minutes_versions"):
+            value = dict(value)
+            value["minutes_versions"] = [{
+                "content": value["minutes"],
+                "created_at": value.get("updated_at") or value.get("created_at")
+                or datetime.now(UTC),
+                "source": "legacy",
+            }]
         review_items = value.get("review_items")
         has_sentence_review = isinstance(review_items, list) and any(
             isinstance(item, dict) and "original_text" in item

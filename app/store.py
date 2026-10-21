@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app.corrections import CorrectionMemory, CorrectionRecord
-from app.models import AIUsageCall, Job, ReviewStatus
+from app.models import AIUsageCall, Job, MinutesVersion, ReviewStatus
 
 
 class JobStore:
@@ -126,3 +126,20 @@ class JobStore:
             job.usage_calls.append(call.model_copy(deep=True))
             job.updated_at = datetime.now(UTC)
             self._persist(job)
+
+    def save_minutes(self, job_id: str, content: str, *, regenerated: bool = False) -> Job:
+        """Publish the latest minutes and retain every successful generation."""
+        with self._lock:
+            job = self._jobs[job_id]
+            path = self.job_dir(job_id) / "minutes.md"
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(path)
+            job.minutes_versions.append(MinutesVersion(
+                content=content,
+                source="regenerated" if regenerated or job.minutes_versions else "initial",
+            ))
+            job.minutes = content
+            job.updated_at = datetime.now(UTC)
+            self._persist(job)
+            return job.model_copy(deep=True)

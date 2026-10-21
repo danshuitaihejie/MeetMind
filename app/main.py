@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.ai import AIService
@@ -263,6 +263,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}/minutes", response_class=FileResponse)
     def download_minutes(job_id: str) -> FileResponse:
         return artifact(job_id, "minutes.md", "text/markdown; charset=utf-8")
+
+    @app.get("/api/jobs/{job_id}/minutes/{version}")
+    def download_minutes_version(job_id: str, version: int) -> Response:
+        job = store.get(job_id)
+        if not job or version < 1 or version > len(job.minutes_versions):
+            raise HTTPException(status_code=404, detail="纪要版本不存在")
+        return Response(
+            content=job.minutes_versions[version - 1].content,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="minutes-v{version}.md"',
+            },
+        )
 
     @app.get("/api/jobs/{job_id}/review/{item_id}/audio", response_class=FileResponse)
     def review_audio(job_id: str, item_id: str) -> FileResponse:

@@ -87,6 +87,7 @@ def test_confirmed_correction_survives_summary_failure(tmp_path: Path) -> None:
         id="summary-fails", filename="meeting.wav", status=JobStatus.completed,
         transcript="确认第一版流程。", review_status=ReviewStatus.ready,
     ))
+    store.save_minutes("summary-fails", "# 原始纪要")
     job_dir = store.job_dir("summary-fails")
     (job_dir / "review").mkdir()
     (job_dir / "transcript.txt").write_text("确认第一版流程。", encoding="utf-8")
@@ -111,6 +112,8 @@ def test_confirmed_correction_survives_summary_failure(tmp_path: Path) -> None:
     )
 
     assert store.get("summary-fails").review_status == ReviewStatus.failed
+    assert store.get("summary-fails").minutes == "# 原始纪要"
+    assert len(store.get("summary-fails").minutes_versions) == 1
     reloaded = JobStore(tmp_path / "jobs")
     assert reloaded.corrections.apply("第一版上线") == "首版上线"
     assert reloaded.corrections.records()[0].context_text == "确认第一版流程。"

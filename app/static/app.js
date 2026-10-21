@@ -7,6 +7,8 @@ const state = {
   polling: null,
   expandedJobId: null,
   usageExpandedJobIds: new Set(),
+  selectedMinutesVersions: new Map(),
+  comparingJobIds: new Set(),
   jobsInitialized: false,
 };
 
@@ -376,6 +378,52 @@ function showResult(content, text, isMinutes) {
   }
 }
 
+function minutesVersionLabel(version, index, total) {
+  const label = version.source === "legacy"
+    ? "已保存纪要（历史首次版不可恢复）"
+    : index === 0 ? "首次生成" : `第 ${index + 1} 版`;
+  const time = new Date(version.created_at).toLocaleString("zh-CN");
+  return `${label}${index === total - 1 ? " · 最新" : ""} · ${time}`;
+}
+
+function renderDiffCell(cell, side) {
+  const element = document.createElement("div");
+  element.className = `diff-cell ${side} ${cell?.kind || "empty"}`;
+  const gutter = document.createElement("span");
+  gutter.className = "diff-gutter";
+  const source = document.createElement("span");
+  source.className = "diff-source";
+  if (cell) {
+    const changed = cell.kind === "changed";
+    const sign = cell.kind === "removed" || (changed && side === "left")
+      ? "−" : cell.kind === "added" || (changed && side === "right") ? "+" : "";
+    gutter.textContent = `${sign} ${cell.line_number}`;
+    const characters = Array.from(cell.text);
+    let cursor = 0;
+    for (const [start, end] of cell.highlights) {
+      source.appendChild(document.createTextNode(characters.slice(cursor, start).join("")));
+      const mark = document.createElement("mark");
+      mark.textContent = characters.slice(start, end).join("");
+      source.appendChild(mark);
+      cursor = end;
+    }
+    const remaining = characters.slice(cursor).join("");
+    if (remaining) source.appendChild(document.createTextNode(remaining));
+    if (!source.hasChildNodes()) source.textContent = "\u00a0";
+  } else {
+    source.textContent = "\u00a0";
+  }
+  element.append(gutter, source);
+  return element;
+}
+
+function renderMinutesDiff(container, result) {
+  container.replaceChildren();
+  for (const row of result.rows) {
+    container.append(renderDiffCell(row.left, "left"), renderDiffCell(row.right, "right"));
+  }
+}
+
 async function requestJSON(url, options = {}) {
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -674,6 +722,7 @@ function renderReview(job, card) {
   const error = $(".review-error", panel);
   const list = $(".review-list", panel);
   const apply = $(".review-apply", panel);
+  const fillAll = $(".review-fill-all", panel);
   const status = job.review_status || "idle";
   panel.classList.remove("hidden");
 
@@ -717,8 +766,27 @@ function renderReview(job, card) {
       list.appendChild(empty);
     } else {
       const pendingCount = job.review_items.filter((item) => item.correction_term == null).length;
+      const suggestedItems = job.review_items.filter((item) => (
+        item.source === "ai" && item.correction_term == null && item.suggested_term.trim()
+      ));
       $("strong", listHeading).textContent = `疑似词 · 待确认 ${pendingCount} / ${job.review_items.length}`;
       listHeading.classList.remove("hidden");
+      if (suggestedItems.length) {
+        fillAll.classList.remove("hidden");
+        fillAll.textContent = `一键填入 ${suggestedItems.length} 条 AI 建议`;
+        fillAll.addEventListener("click", () => {
+          const fields = new Map(
+            [...panel.querySelectorAll(".review-correction")].map((field) => [
+              field.dataset.itemId, field,
+            ]),
+          );
+          suggestedItems.forEach((item) => {
+            const field = fields.get(item.id);
+            if (field) field.value = item.suggested_term.trim();
+          });
+          fillAll.textContent = `已填入 ${suggestedItems.length} 条 AI 建议`;
+        });
+      }
       job.review_items.forEach((item) => list.appendChild(renderReviewItem(job, item)));
       apply.classList.remove("hidden");
     }
@@ -726,7 +794,7 @@ function renderReview(job, card) {
     apply.textContent = status === "completed"
       ? "更新修正并重新生成纪要 →"
       : "应用以上修正并重新生成纪要 →";
-    apply.addEventListener("click", async () => {
+    async function submitReview() {
       state.expandedJobId = job.id;
       const corrections = [...panel.querySelectorAll(".review-correction")].map((field) => ({
         item_id: field.dataset.itemId,
@@ -744,6 +812,7 @@ function renderReview(job, card) {
         return;
       }
       apply.disabled = true;
+      fillAll.disabled = true;
       apply.textContent = "正在应用修正…";
       try {
         await requestJSON(`/api/jobs/${job.id}/review/apply`, {
@@ -758,11 +827,15 @@ function renderReview(job, card) {
         startPolling();
       } catch (requestError) {
         apply.disabled = false;
-        apply.textContent = "应用以上修正并重新生成纪要 →";
+        fillAll.disabled = false;
+        apply.textContent = status === "completed"
+          ? "更新修正并重新生成纪要 →"
+          : "应用以上修正并重新生成纪要 →";
         error.textContent = requestError.message;
         error.classList.remove("hidden");
       }
-    });
+    }
+    apply.addEventListener("click", submitReview);
   }
 }
 
@@ -845,23 +918,84 @@ function renderJob(job) {
     const results = $(".job-results", card);
     const content = $(".result-content", card);
     const tabs = [...card.querySelectorAll(".result-tabs button")];
-    results.classList.remove("hidden");
-    let current = job.minutes || job.transcript || "";
+    const versions = job.minutes_versions || [];
+    const versionTools = $(".result-version-tools", card);
+    const versionSelect = $(".result-version-select", card);
+    const compareToggle = $(".compare-toggle", card);
+    const compare = $(".result-compare", card);
+    const actions = $(".result-actions", card);
+    const minutesLink = $("[data-download='minutes']", card);
+    let selectedVersion = state.selectedMinutesVersions.get(job.id) || versions.length;
+    if (selectedVersion > versions.length) selectedVersion = versions.length;
     let showingMinutes = Boolean(job.minutes);
-    showResult(content, current, showingMinutes);
+    let comparing = state.comparingJobIds.has(job.id) && versions.length > 1;
+    let current = "";
+    versions.forEach((version, index) => {
+      const option = document.createElement("option");
+      option.value = String(index + 1);
+      option.textContent = minutesVersionLabel(version, index, versions.length);
+      versionSelect.appendChild(option);
+    });
+    if (versions.length) versionSelect.value = String(selectedVersion);
+    versionTools.classList.toggle("hidden", versions.length === 0);
+    compareToggle.classList.toggle("hidden", versions.length < 2);
+    const refreshResult = () => {
+      const canCompare = showingMinutes && comparing && versions.length > 1;
+      $(".job-content-grid", card).classList.toggle("comparing", canCompare);
+      content.classList.toggle("hidden", canCompare);
+      compare.classList.toggle("hidden", !canCompare);
+      actions.classList.toggle("hidden", canCompare);
+      versionTools.classList.toggle("hidden", !showingMinutes || versions.length === 0);
+      compareToggle.setAttribute("aria-pressed", String(canCompare));
+      compareToggle.textContent = canCompare ? "退出差异对比" : versions[0]?.source === "legacy"
+        ? "对比最早保存版与最新版差异" : "对比首次版与最新版差异";
+      if (canCompare) {
+        const first = versions[0];
+        const latest = versions[versions.length - 1];
+        $(".compare-first-title", compare).textContent = minutesVersionLabel(first, 0, versions.length);
+        $(".compare-latest-title", compare).textContent = minutesVersionLabel(latest, versions.length - 1, versions.length);
+        $(".compare-first-download", compare).href = `/api/jobs/${job.id}/minutes/1`;
+        $(".compare-latest-download", compare).href = `/api/jobs/${job.id}/minutes/${versions.length}`;
+        const status = $(".compare-status", compare);
+        const diff = $(".compare-diff", compare);
+        const result = window.MeetMindDiff.buildMinutesDiff(first.content, latest.content);
+        renderMinutesDiff(diff, result);
+        status.textContent = result.change_count
+          ? `${result.change_count} 行有变化 · 红色为原版，绿色为新版；深色标出改动文字`
+          : "两个版本内容相同";
+        return;
+      }
+      current = showingMinutes
+        ? (versions[selectedVersion - 1]?.content || job.minutes || "纪要尚未生成")
+        : (job.transcript || "转写尚未生成");
+      showResult(content, current, showingMinutes && Boolean(job.minutes));
+      minutesLink.href = versions.length
+        ? `/api/jobs/${job.id}/minutes/${selectedVersion}`
+        : `/api/jobs/${job.id}/minutes`;
+    };
+    results.classList.remove("hidden");
+    refreshResult();
     tabs.forEach((tab) => tab.addEventListener("click", () => {
       tabs.forEach((item) => item.classList.toggle("active", item === tab));
       showingMinutes = tab.dataset.tab === "minutes";
-      current = showingMinutes ? (job.minutes || "纪要尚未生成") : (job.transcript || "转写尚未生成");
-      showResult(content, current, showingMinutes && Boolean(job.minutes));
+      refreshResult();
     }));
+    versionSelect.addEventListener("change", () => {
+      selectedVersion = Number(versionSelect.value);
+      state.selectedMinutesVersions.set(job.id, selectedVersion);
+      refreshResult();
+    });
+    compareToggle.addEventListener("click", () => {
+      comparing = !comparing;
+      if (comparing) state.comparingJobIds.add(job.id);
+      else state.comparingJobIds.delete(job.id);
+      refreshResult();
+    });
     $(".copy-button", card).addEventListener("click", async (event) => {
       await navigator.clipboard.writeText(current);
       event.currentTarget.textContent = "已复制";
       setTimeout(() => { event.currentTarget.textContent = "复制内容"; }, 1500);
     });
-    const minutesLink = $("[data-download='minutes']", card);
-    minutesLink.href = `/api/jobs/${job.id}/minutes`;
     if (!job.minutes) minutesLink.classList.add("hidden");
     $("[data-download='audio']", card).href = `/api/jobs/${job.id}/audio`;
   } else if (job.compressed_size_bytes) {

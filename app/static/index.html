@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261020-5" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261021-2" />
   </head>
   <body>
     <header class="topbar">
@@ -180,7 +180,21 @@
                 <button type="button" class="active" data-tab="minutes">会议纪要</button>
                 <button type="button" data-tab="transcript">完整转写</button>
               </div>
+              <div class="result-version-tools hidden">
+                <label>纪要版本 <select class="result-version-select" aria-label="选择纪要版本"></select></label>
+                <button class="compare-toggle" type="button" aria-pressed="false">对比首次版与最新版差异</button>
+              </div>
               <div class="result-content"></div>
+              <div class="result-compare hidden">
+                <section class="compare-column">
+                  <div class="compare-heading"><strong class="compare-first-title"></strong><a class="compare-first-download">下载</a></div>
+                </section>
+                <section class="compare-column">
+                  <div class="compare-heading"><strong class="compare-latest-title"></strong><a class="compare-latest-download">下载</a></div>
+                </section>
+                <p class="compare-status" aria-live="polite"></p>
+                <div class="compare-diff" aria-label="纪要版本差异"></div>
+              </div>
               <div class="result-actions">
                 <button class="copy-button" type="button">复制内容</button>
                 <a data-download="minutes">下载纪要</a>
@@ -222,11 +236,12 @@
                 <div class="manual-review-pending"></div>
               </section>
               <div class="review-list-heading hidden">
-                <strong>疑似词</strong><span>在右侧区域内滚动查看</span>
+                <strong>疑似词</strong>
+                <button class="review-fill-all hidden" type="button"></button>
               </div>
               <div class="review-list"></div>
               <p class="review-description">
-                点击“填入 AI 建议”只会填写修正词；确认后点击下方按钮，才会保存修正并重新生成纪要。
+                “一键填入”只填写待确认的 AI 建议，不会保存。请检查或修改后，再点击下方按钮应用修正并重新生成纪要。
               </p>
               <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
             </div>
@@ -239,6 +254,7 @@
       <span>MeetMind</span>
       <p>更少回放，更多推进。</p>
     </footer>
-    <script src="/assets/app.js?v=20261020-5" defer></script>
+    <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
+    <script src="/assets/app.js?v=20261021-5" defer></script>
   </body>
 </html>

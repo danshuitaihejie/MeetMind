@@ -73,14 +73,13 @@ def process_job(
 
         store.update(job_id, stage="MiniMax 整理会议纪要", progress=84, transcript=transcript)
         minutes = ai.summarize(transcript, job.context)
-        (store.job_dir(job_id) / "minutes.md").write_text(minutes, encoding="utf-8")
+        store.save_minutes(job_id, minutes)
 
         store.update(
             job_id,
             status=JobStatus.completed,
             stage="处理完成",
             progress=100,
-            minutes=minutes,
             error=None,
         )
     except Exception as exc:  # Pipeline failures must be visible to the polling client.
