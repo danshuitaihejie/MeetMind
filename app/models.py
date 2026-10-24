@@ -95,6 +95,30 @@ class ReviewSubmission(BaseModel):
     )
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    job_id: str | None = None
+    job_ids: list[str] | None = Field(default=None, max_length=100)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=10)
+
+
+class ChatSource(BaseModel):
+    job_id: str
+    filename: str
+    created_at: datetime
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[ChatSource]
+    retrieved: bool = False
+
+
 class AIUsageCall(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     operation: str

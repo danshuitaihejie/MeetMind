@@ -9,10 +9,13 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, 
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.ai import AIService
+from app.ai import AIConfigurationError, AIService, MiniMaxAPIError
+from app.chat import available_jobs, build_context
 from app.config import Settings
 from app.media import MediaProcessor
 from app.models import (
+    ChatRequest,
+    ChatResponse,
     HealthResponse,
     Job,
     JobStatus,
@@ -63,6 +66,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs", response_model=list[Job])
     def list_jobs() -> list[Job]:
         return store.list()
+
+    @app.post("/api/chat", response_model=ChatResponse)
+    def ask_meetings(request: ChatRequest) -> ChatResponse:
+        question = request.question.strip()
+        if not question:
+            raise HTTPException(status_code=422, detail="请输入问题")
+        if request.job_ids is not None and request.job_id is not None:
+            raise HTTPException(status_code=422, detail="不能同时指定 job_id 和 job_ids")
+        selected_ids = (
+            request.job_ids if request.job_ids is not None
+            else [request.job_id] if request.job_id is not None else None
+        )
+        if selected_ids is not None and not selected_ids:
+            raise HTTPException(status_code=422, detail="请至少选择一场会议")
+        selected_set = set(selected_ids) if selected_ids is not None else None
+        all_jobs = store.list()
+        if selected_set and not selected_set.issubset({job.id for job in all_jobs}):
+            raise HTTPException(status_code=404, detail="会议不存在")
+        jobs = available_jobs(all_jobs, selected_set)
+        if not jobs:
+            raise HTTPException(status_code=409, detail="所选范围内还没有已完成的会议纪要和转写")
+        if selected_set and len(jobs) != len(selected_set):
+            raise HTTPException(status_code=409, detail="所选会议中有尚未完成纪要和转写的会议")
+        context, sources, retrieved = build_context(jobs, request)
+        chat_ai = (
+            ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
+            if selected_set and len(selected_set) == 1
+            else ai.with_usage_recorder(store.record_chat_usage)
+        )
+        try:
+            answer = chat_ai.answer_meeting_question(
+                question, context, request.history, retrieved=retrieved,
+            )
+        except AIConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except MiniMaxAPIError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return ChatResponse(answer=answer, sources=sources, retrieved=retrieved)
 
     @app.get("/api/jobs/{job_id}", response_model=Job)
     def get_job(job_id: str) -> Job:

@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261021-2" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261025-3" />
   </head>
   <body>
     <header class="topbar">
@@ -16,6 +16,7 @@
       </a>
       <div class="topbar-actions">
         <button class="topbar-link hidden" id="newMeetingToggle" type="button">新建会议</button>
+        <a class="topbar-link" href="#chatSection">问会议</a>
         <a class="topbar-link" href="#jobsSection">处理记录</a>
         <div class="system-status" id="systemStatus">
           <span class="status-dot"></span>
@@ -138,9 +139,41 @@
         </aside>
       </section>
 
+      <section class="chat-section" id="chatSection" aria-labelledby="chatTitle">
+        <div class="section-heading">
+          <div><p class="eyebrow">MEETING RECALL · 02</p><h2 id="chatTitle">问会议</h2></div>
+        </div>
+        <div class="panel chat-panel">
+          <div class="chat-toolbar">
+            <span class="chat-scope-label" id="chatScopeLabel">查找范围</span>
+            <details class="chat-scope" id="chatScope">
+              <summary id="chatScopeSummary" aria-labelledby="chatScopeLabel chatScopeSummary">已选 0 场会议</summary>
+              <div class="chat-scope-popover">
+                <div class="chat-scope-actions">
+                  <button id="chatSelectAll" type="button">全部会议</button>
+                  <button id="chatSelectNone" type="button">清空选择</button>
+                </div>
+                <div class="chat-scope-options" id="chatScopeOptions" role="group" aria-labelledby="chatScopeLabel"></div>
+              </div>
+            </details>
+            <button class="chat-clear" id="chatClear" type="button">开始新对话</button>
+          </div>
+          <p class="chat-hint" id="chatHint">从会议纪要和完整转写中查找依据，并列出参考会议。</p>
+          <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
+          <form class="chat-form" id="chatForm">
+            <label for="chatQuestion">你的问题</label>
+            <div class="chat-compose">
+              <textarea id="chatQuestion" rows="2" maxlength="2000" placeholder="例如：上次讨论的上线时间和负责人是谁？"></textarea>
+              <button id="chatSend" type="submit">发送 →</button>
+            </div>
+            <p class="chat-error hidden" id="chatError" role="alert"></p>
+          </form>
+        </div>
+      </section>
+
       <section class="jobs-section" id="jobsSection" aria-labelledby="jobsTitle">
         <div class="section-heading">
-          <div><p class="eyebrow">PROCESSING DESK · 02</p><h2 id="jobsTitle">处理记录</h2></div>
+          <div><p class="eyebrow">PROCESSING DESK · 03</p><h2 id="jobsTitle">处理记录</h2></div>
           <button class="text-button" id="refreshJobs" type="button">刷新 ↻</button>
         </div>
         <div class="empty-state" id="emptyState">
@@ -157,6 +190,12 @@
           <div class="job-file-icon">AU</div>
           <div class="job-title"><strong></strong><span></span></div>
           <div class="job-state"><i></i><span></span></div>
+          <button class="job-chat" type="button" aria-label="询问这场会议" title="询问这场会议">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+              <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5c-1.2 0-2.3-.3-3.3-.8L4 20l1.8-5.2a7.5 7.5 0 1 1 14.2-3.3Z" />
+              <path d="M8.5 11.5h8" />
+            </svg>
+          </button>
           <button class="job-toggle" type="button" aria-expanded="false">
             <span>展开</span><b aria-hidden="true">⌄</b>
           </button>
@@ -196,6 +235,7 @@
                 <div class="compare-diff" aria-label="纪要版本差异"></div>
               </div>
               <div class="result-actions">
+                <button class="ask-meeting" type="button">询问这场会议</button>
                 <button class="copy-button" type="button">复制内容</button>
                 <a data-download="minutes">下载纪要</a>
                 <a data-download="audio">下载压缩音频</a>
@@ -255,6 +295,6 @@
       <p>更少回放，更多推进。</p>
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
-    <script src="/assets/app.js?v=20261021-5" defer></script>
+    <script src="/assets/app.js?v=20261025-3" defer></script>
   </body>
 </html>

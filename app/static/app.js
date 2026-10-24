@@ -10,6 +10,10 @@ const state = {
   selectedMinutesVersions: new Map(),
   comparingJobIds: new Set(),
   jobsInitialized: false,
+  chatConversations: new Map(),
+  selectedChatJobIds: null,
+  chatScopeJobsSignature: "",
+  chatLoading: false,
 };
 
 const elements = {
@@ -36,6 +40,19 @@ const elements = {
   newMeeting: $("#newMeetingToggle"),
   uploadWorkspace: $("#uploadWorkspace"),
   template: $("#jobTemplate"),
+  chatSection: $("#chatSection"),
+  chatScope: $("#chatScope"),
+  chatScopeSummary: $("#chatScopeSummary"),
+  chatScopeOptions: $("#chatScopeOptions"),
+  chatSelectAll: $("#chatSelectAll"),
+  chatSelectNone: $("#chatSelectNone"),
+  chatHint: $("#chatHint"),
+  chatMessages: $("#chatMessages"),
+  chatForm: $("#chatForm"),
+  chatQuestion: $("#chatQuestion"),
+  chatSend: $("#chatSend"),
+  chatClear: $("#chatClear"),
+  chatError: $("#chatError"),
 };
 
 function formatBytes(bytes) {
@@ -187,6 +204,7 @@ const usageOperationLabels = {
   summary_regeneration: "重新生成纪要",
   review_detection: "校对词语检测",
   review_refinement: "校对结果细化",
+  chat: "会议问答",
 };
 
 const usageStatusLabels = {
@@ -433,6 +451,202 @@ async function requestJSON(url, options = {}) {
     throw new Error(message);
   }
   return response.json();
+}
+
+function availableChatJobs() {
+  return state.jobs.filter((job) => job.status === "completed" && job.minutes && job.transcript);
+}
+
+function meetingTitle(job) {
+  if (!job.minutes) return "";
+  const heading = job.minutes.match(/^\s*#\s+(.+)$/m)?.[1];
+  if (heading) return heading.replace(/[\r*_`]/g, "").trim();
+  const summary = job.minutes.split("\n").map((line) => line.trim()).find((line) => (
+    line && !/^(?:#{1,6}\s|[-*+]\s|\||>|\d+[.)]\s)/.test(line)
+  ));
+  return summary ? summary.slice(0, 80) : job.context.trim().slice(0, 80);
+}
+
+function openMeetingChat(jobId) {
+  if (state.chatLoading) return;
+  state.selectedChatJobIds = new Set([jobId]);
+  setChatError();
+  renderChatScope();
+  elements.chatSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  elements.chatQuestion.focus({ preventScroll: true });
+}
+
+function setChatError(message = "") {
+  elements.chatError.textContent = message;
+  elements.chatError.classList.toggle("hidden", !message);
+}
+
+function selectedChatIds(jobs = availableChatJobs()) {
+  return jobs.filter((job) => (
+    state.selectedChatJobIds === null || state.selectedChatJobIds.has(job.id)
+  )).map((job) => job.id);
+}
+
+function chatScopeKey(jobs = availableChatJobs()) {
+  return JSON.stringify(selectedChatIds(jobs).sort());
+}
+
+function renderChatScope() {
+  const jobs = availableChatJobs();
+  const signature = JSON.stringify(jobs.map((job) => [job.id, job.filename, meetingTitle(job)]));
+  if (signature !== state.chatScopeJobsSignature) {
+    state.chatScopeJobsSignature = signature;
+    elements.chatScopeOptions.replaceChildren();
+    for (const job of jobs) {
+      const label = document.createElement("label");
+      label.className = "chat-scope-option";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = job.id;
+      const name = document.createElement("span");
+      name.textContent = `${job.filename} · ${meetingTitle(job) || "会议主题未提取"}`;
+      label.append(checkbox, name);
+      elements.chatScopeOptions.appendChild(label);
+    }
+    if (!jobs.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-scope-empty";
+      empty.textContent = "暂无可询问的会议";
+      elements.chatScopeOptions.appendChild(empty);
+    }
+  }
+  const ids = selectedChatIds(jobs);
+  elements.chatScopeSummary.textContent = `已选 ${ids.length} / ${jobs.length} 场会议`;
+  elements.chatScopeOptions.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+    checkbox.checked = ids.includes(checkbox.value);
+    checkbox.disabled = state.chatLoading;
+  });
+  elements.chatSelectAll.disabled = state.chatLoading || jobs.length === 0 || ids.length === jobs.length;
+  elements.chatSelectNone.disabled = state.chatLoading || ids.length === 0;
+  elements.chatQuestion.disabled = state.chatLoading || ids.length === 0;
+  elements.chatSend.disabled = state.chatLoading || ids.length === 0;
+  elements.chatClear.disabled = state.chatLoading || !state.chatConversations.get(chatScopeKey(jobs))?.length;
+  elements.chatSend.textContent = state.chatLoading ? "查找中…" : "发送 →";
+  elements.chatHint.textContent = !jobs.length
+    ? "会议完成纪要和转写后，就可以在这里提问。"
+    : ids.length
+      ? "从所选会议的纪要和完整转写中查找依据，并列出参考会议。"
+      : "请先勾选至少一场会议。";
+  renderChatMessages();
+}
+
+function renderChatMessages() {
+  const ids = selectedChatIds();
+  const scope = chatScopeKey();
+  const messages = state.chatConversations.get(scope) || [];
+  elements.chatMessages.replaceChildren();
+  if (!messages.length && !state.chatLoading) {
+    const empty = document.createElement("p");
+    empty.className = "chat-empty";
+    empty.textContent = !ids.length
+      ? "请先选择要查找的会议。"
+      : ids.length === 1
+        ? "问问这场会议讨论了什么、决定了什么。"
+        : "跨会议查找曾经讨论的结论、时间和负责人。";
+    elements.chatMessages.appendChild(empty);
+  }
+  for (const message of messages) {
+    const article = document.createElement("article");
+    article.className = `chat-message ${message.role === "user" ? "from-user" : "from-assistant"}`;
+    const label = document.createElement("span");
+    label.className = "chat-message-label";
+    label.textContent = message.role === "user" ? "你" : "MeetMind";
+    const body = document.createElement("div");
+    body.className = "chat-message-body";
+    body.textContent = message.content;
+    article.append(label, body);
+    if (message.role === "assistant" && message.retrieved) {
+      const note = document.createElement("p");
+      note.className = "chat-retrieval-note";
+      note.textContent = "记录较长：回答依据为从完整转写中检索的相关片段及对应纪要。";
+      article.appendChild(note);
+    }
+    if (message.role === "assistant" && message.sources?.length) {
+      const sources = document.createElement("div");
+      sources.className = "chat-sources";
+      const caption = document.createElement("span");
+      caption.textContent = "参考会议";
+      sources.appendChild(caption);
+      for (const source of message.sources) {
+        const button = document.createElement("button");
+        button.type = "button";
+        const sourceJob = state.jobs.find((job) => job.id === source.job_id);
+        button.textContent = sourceJob
+          ? `${meetingTitle(sourceJob) || "会议主题未提取"} · ${source.filename}`
+          : source.filename;
+        button.title = source.created_at
+          ? new Date(source.created_at).toLocaleString("zh-CN") : source.filename;
+        button.addEventListener("click", () => {
+          if (!state.jobs.some((job) => job.id === source.job_id)) return;
+          state.expandedJobId = source.job_id;
+          renderJobs();
+          document.querySelector(`[data-job-id="${CSS.escape(source.job_id)}"]`)?.scrollIntoView({
+            behavior: "smooth", block: "start",
+          });
+        });
+        sources.appendChild(button);
+      }
+      article.appendChild(sources);
+    }
+    elements.chatMessages.appendChild(article);
+  }
+  if (state.chatLoading) {
+    const pending = document.createElement("p");
+    pending.className = "chat-pending";
+    pending.textContent = "正在会议纪要和转写中查找…";
+    elements.chatMessages.appendChild(pending);
+  }
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+async function submitChat(event) {
+  event.preventDefault();
+  const ids = selectedChatIds();
+  if (state.chatLoading || !ids.length) return;
+  const question = elements.chatQuestion.value.trim();
+  if (!question) {
+    setChatError("请输入问题");
+    elements.chatQuestion.focus();
+    return;
+  }
+  const scope = chatScopeKey();
+  const messages = state.chatConversations.get(scope) || [];
+  const history = messages.slice(-10).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
+  messages.push({ role: "user", content: question });
+  state.chatConversations.set(scope, messages);
+  state.chatLoading = true;
+  setChatError();
+  elements.chatQuestion.value = "";
+  renderChatScope();
+  try {
+    const response = await requestJSON("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, job_ids: state.selectedChatJobIds === null ? null : ids, history }),
+    });
+    if (typeof response.answer !== "string" || !response.answer.trim()) {
+      throw new Error("服务没有返回回答，请稍后重试");
+    }
+    messages.push({
+      role: "assistant",
+      content: response.answer,
+      sources: Array.isArray(response.sources) ? response.sources : [],
+      retrieved: Boolean(response.retrieved),
+    });
+  } catch (error) {
+    messages.pop();
+    elements.chatQuestion.value = question;
+    setChatError(error.message || "提问失败，请稍后重试");
+  } finally {
+    state.chatLoading = false;
+    renderChatScope();
+    if (elements.chatQuestion.value) elements.chatQuestion.focus();
+  }
 }
 
 function appendHighlightedContext(container, contextText, originalTerm, termStart = null) {
@@ -865,8 +1079,17 @@ function renderJob(job) {
     state.expandedJobId = shouldExpand ? job.id : null;
     if (!shouldExpand) card.querySelectorAll("audio").forEach((audio) => audio.pause());
   });
-  $(".job-title strong", card).textContent = job.filename;
-  $(".job-title span", card).textContent = new Date(job.created_at).toLocaleString("zh-CN");
+  const title = meetingTitle(job);
+  const createdAt = new Date(job.created_at).toLocaleString("zh-CN");
+  $(".job-title strong", card).textContent = title || job.filename;
+  $(".job-title span", card).textContent = title
+    ? `${job.filename} · ${createdAt}` : createdAt;
+  const chatShortcut = $(".job-chat", card);
+  const canChat = job.status === "completed" && job.minutes && job.transcript;
+  chatShortcut.disabled = !canChat;
+  chatShortcut.title = canChat ? `询问：${title || job.filename}` : "会议完成后可询问";
+  chatShortcut.setAttribute("aria-label", chatShortcut.title);
+  if (canChat) chatShortcut.addEventListener("click", () => openMeetingChat(job.id));
   $(".job-state span", card).textContent = job.stage;
   $(".job-progress b", card).style.width = `${job.progress}%`;
   $(".job-progress > span", card).textContent = `${job.progress}%`;
@@ -998,6 +1221,12 @@ function renderJob(job) {
     });
     if (!job.minutes) minutesLink.classList.add("hidden");
     $("[data-download='audio']", card).href = `/api/jobs/${job.id}/audio`;
+    const askMeeting = $(".ask-meeting", card);
+    if (job.status === "completed" && job.minutes && job.transcript) {
+      askMeeting.addEventListener("click", () => openMeetingChat(job.id));
+    } else {
+      askMeeting.classList.add("hidden");
+    }
   } else if (job.compressed_size_bytes) {
     const results = $(".job-results", card);
     results.classList.remove("hidden");
@@ -1037,6 +1266,7 @@ function renderJobs() {
   elements.jobsList.replaceChildren();
   elements.emptyState.classList.toggle("hidden", hasJobs);
   for (const job of state.jobs) elements.jobsList.appendChild(renderJob(job));
+  renderChatScope();
 }
 
 async function loadJobs() {
@@ -1067,6 +1297,39 @@ elements.speed.addEventListener("change", updateEstimate);
 elements.trim.addEventListener("change", updateEstimate);
 elements.submit.addEventListener("click", upload);
 elements.refresh.addEventListener("click", loadJobs);
+elements.chatScopeOptions.addEventListener("change", (event) => {
+  if (state.chatLoading || event.target.type !== "checkbox") return;
+  if (state.selectedChatJobIds === null) state.selectedChatJobIds = new Set(selectedChatIds());
+  if (event.target.checked) state.selectedChatJobIds.add(event.target.value);
+  else state.selectedChatJobIds.delete(event.target.value);
+  if (selectedChatIds().length === availableChatJobs().length) state.selectedChatJobIds = null;
+  setChatError();
+  renderChatScope();
+});
+elements.chatSelectAll.addEventListener("click", () => {
+  state.selectedChatJobIds = null;
+  setChatError();
+  renderChatScope();
+});
+elements.chatSelectNone.addEventListener("click", () => {
+  state.selectedChatJobIds = new Set();
+  setChatError();
+  renderChatScope();
+});
+elements.chatForm.addEventListener("submit", submitChat);
+elements.chatQuestion.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    elements.chatForm.requestSubmit();
+  }
+});
+elements.chatClear.addEventListener("click", () => {
+  state.chatConversations.delete(chatScopeKey());
+  elements.chatQuestion.value = "";
+  setChatError();
+  renderChatScope();
+  elements.chatQuestion.focus();
+});
 elements.newMeeting.addEventListener("click", () => {
   const show = !document.body.classList.contains("show-upload");
   document.body.classList.toggle("show-upload", show);
@@ -1082,6 +1345,7 @@ elements.newMeeting.addEventListener("click", () => {
 elements.dropzone.addEventListener("drop", (event) => selectFile(event.dataTransfer.files[0]));
 
 checkHealth();
+renderChatScope();
 loadJobs().then(() => {
   if (state.jobs.some((job) => (
     ["queued", "processing"].includes(job.status)

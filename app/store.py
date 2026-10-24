@@ -127,6 +127,12 @@ class JobStore:
             job.updated_at = datetime.now(UTC)
             self._persist(job)
 
+    def record_chat_usage(self, call: AIUsageCall) -> None:
+        """Keep cross-meeting calls separate from any individual meeting's usage."""
+        with self._lock:
+            with (self.root.parent / "chat_usage.jsonl").open("a", encoding="utf-8") as ledger:
+                ledger.write(call.model_dump_json() + "\n")
+
     def save_minutes(self, job_id: str, content: str, *, regenerated: bool = False) -> Job:
         """Publish the latest minutes and retain every successful generation."""
         with self._lock:
