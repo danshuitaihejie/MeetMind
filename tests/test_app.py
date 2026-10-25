@@ -114,6 +114,8 @@ def test_end_to_end_mock_pipeline(tmp_path: Path) -> None:
         assert len(job["minutes_versions"]) == 1
         assert job["minutes_versions"][0]["source"] == "initial"
         assert client.get(f"/api/jobs/{job_id}/audio").status_code == 200
+        assert (app.state.store.job_dir(job_id) / "source.wav").read_bytes() == sample.read_bytes()
+        assert client.get(f"/api/jobs/{job_id}/source").content == sample.read_bytes()
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is not installed")

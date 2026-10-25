@@ -17,9 +17,11 @@ from app.models import (
     ChatRequest,
     ChatSession,
     ChatSessionMessage,
+    ChatSource,
     ChatTurn,
     Job,
     JobStatus,
+    TranscriptSegment,
 )
 
 
@@ -67,6 +69,95 @@ def test_chat_scope_uses_minutes_and_full_transcripts(tmp_path: Path, monkeypatc
     assert not captured[0]["retrieved"]
     assert missing.status_code == 404
     assert blank.status_code == 422
+
+
+def test_chat_sources_include_original_transcript_passages(tmp_path: Path) -> None:
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    app.state.store.create(meeting(
+        "one", "预算纪要", "讨论开始。苍鹭计划预算由林工负责。会议结束。",
+    ))
+    with TestClient(app) as client:
+        response = client.post("/api/chat", json={"question": "苍鹭计划预算谁负责？"})
+    assert response.status_code == 200
+    passages = response.json()["sources"][0]["passages"]
+    assert any("苍鹭计划预算由林工负责" in item["text"] for item in passages)
+    assert all(item["start_seconds"] is None for item in passages)
+
+
+def test_saved_chat_without_passages_recovers_context_on_read(tmp_path: Path) -> None:
+    job = meeting("one", "预算纪要", "苍鹭计划预算由林工负责。")
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    app.state.store.create(job)
+    session = app.state.session_store.create(["one"])
+    source = ChatSource(job_id=job.id, filename=job.filename, created_at=job.created_at)
+    app.state.session_store.append_exchange(
+        session.id, 0,
+        ChatSessionMessage(role="user", content="苍鹭计划预算谁负责？"),
+        ChatSessionMessage(role="assistant", content="林工负责", sources=[source]),
+        "预算", False,
+    )
+    with TestClient(app) as client:
+        restored = client.get(f"/api/chat/sessions/{session.id}").json()
+    assert "苍鹭计划预算由林工负责" in restored["messages"][1]["sources"][0]["passages"][0]["text"]
+
+
+def test_original_media_range_and_exact_review_seek(tmp_path: Path) -> None:
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    app.state.store.create(meeting("one", "预算纪要", "苍鹭计划预算由林工负责"))
+    directory = app.state.store.job_dir("one")
+    (directory / "source.wav").write_bytes(b"original-media-bytes")
+    review = directory / "review"
+    review.mkdir()
+    (review / "segments.json").write_text(json.dumps([
+        TranscriptSegment(index=0, start_seconds=12.5, end_seconds=16.2,
+                          text="苍鹭计划预算由林工负责").model_dump(mode="json"),
+    ], ensure_ascii=False), encoding="utf-8")
+    with TestClient(app) as client:
+        answer = client.post("/api/chat", json={"question": "苍鹭计划预算谁负责？"})
+        media = client.get("/api/jobs/one/source", headers={"Range": "bytes=0-7"})
+        located = client.post("/api/jobs/one/locate", json={
+            "text": "苍鹭计划预算由林工负责",
+        })
+        missing = client.get("/api/jobs/missing/source")
+    assert answer.json()["sources"][0]["passages"][0]["start_seconds"] == 12.5
+    assert media.status_code == 206
+    assert media.content == b"original"
+    assert located.status_code == 200
+    assert located.json()["start_seconds"] == 12.5
+    assert missing.status_code == 404
+
+
+def test_first_seek_builds_and_reuses_original_speed_alignment(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    app.state.store.create(meeting("one", "纪要", "苍鹭计划预算由林工负责"))
+    (app.state.store.job_dir("one") / "source.wav").write_bytes(b"source")
+    calls = []
+
+    def compress(source, output, speed, trim_silence):
+        calls.append((speed, trim_silence))
+        output.write_bytes(b"audio")
+
+    monkeypatch.setattr("app.media.MediaProcessor.compress", staticmethod(compress))
+    monkeypatch.setattr("app.media.MediaProcessor.probe_duration", staticmethod(lambda path: 20.0))
+    monkeypatch.setattr("app.media.MediaProcessor.split_for_transcription",
+                        staticmethod(lambda audio, directory, duration: [audio]))
+    monkeypatch.setattr(AIService, "transcribe_detailed", lambda self, path: [
+        TranscriptSegment(index=0, start_seconds=4, end_seconds=8,
+                          text="苍鹭计划预算由林工负责"),
+    ])
+    with TestClient(app) as client:
+        first = client.post("/api/jobs/one/locate", json={
+            "text": "苍鹭计划预算由林工负责",
+        })
+        second = client.post("/api/jobs/one/locate", json={
+            "text": "苍鹭计划预算由林工负责",
+        })
+    assert first.status_code == second.status_code == 200
+    assert first.json()["start_seconds"] == 4
+    assert calls == [(1.0, False)]
+    assert (app.state.store.job_dir("one") / "alignment" / "segments.json").is_file()
 
 
 def test_chat_requires_completed_meeting(tmp_path: Path) -> None:
@@ -254,6 +345,11 @@ def test_chat_note_persists_and_supports_follow_up(tmp_path: Path) -> None:
         assert note["phrase"] == "苍鹭计划"
         assert len(note["exchanges"]) == 1
         assert {source["job_id"] for source in note["sources"]} == {"one", "two"}
+        assert any(
+            "苍鹭计划" in passage["text"]
+            for source in note["exchanges"][0]["sources"]
+            for passage in source["passages"]
+        )
         followed = client.post(
             f"/api/chat/notes/{note['id']}/ask", json={"question": "谁负责预算？"},
         )
@@ -261,6 +357,7 @@ def test_chat_note_persists_and_supports_follow_up(tmp_path: Path) -> None:
         assert [turn["question"] for turn in followed.json()["exchanges"]] == [
             "释义", "谁负责预算？",
         ]
+        assert followed.json()["exchanges"][1]["sources"]
         assert len(client.get("/api/chat/notes").json()) == 1
 
     restarted = create_app(Settings(data_dir=tmp_path, mock_ai=True))
@@ -268,6 +365,7 @@ def test_chat_note_persists_and_supports_follow_up(tmp_path: Path) -> None:
         saved = client.get("/api/chat/notes").json()
     assert saved[0]["id"] == note["id"]
     assert len(saved[0]["exchanges"]) == 2
+    assert any(source["passages"] for source in saved[0]["exchanges"][0]["sources"])
     assert len((tmp_path / "chat_usage.jsonl").read_text().splitlines()) == 2
 
 

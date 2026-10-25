@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261025-13" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261025-16" />
   </head>
   <body class="desktop-view-upload">
     <header class="topbar">
@@ -213,6 +213,26 @@
         </div>
       </section>
 
+      <section class="source-player-panel hidden" id="sourcePlayer" aria-labelledby="sourcePlayerTitle">
+        <div class="source-player-heading">
+          <div><p class="kicker">SOURCE RECORDING</p><h2 id="sourcePlayerTitle">原片回顾</h2></div>
+          <button type="button" id="sourcePlayerClose">← 返回对话</button>
+        </div>
+        <div class="source-player-layout">
+          <aside class="source-player-sidebar" aria-label="原始片段列表">
+            <strong>相关片段</strong>
+            <nav id="sourcePlayerList" aria-label="选择原始片段"></nav>
+          </aside>
+          <div class="source-player-workspace">
+            <h3 id="sourcePlayerMeeting"></h3>
+            <p id="sourcePlayerContext"></p>
+            <p class="source-player-status" id="sourcePlayerStatus" role="status"></p>
+            <div id="sourcePlayerMedia"></div>
+            <a id="sourcePlayerOriginal" target="_blank" rel="noopener">打开完整原始文件</a>
+          </div>
+        </div>
+      </section>
+
       <section class="jobs-section" id="jobsSection" aria-labelledby="jobsTitle">
         <div class="section-heading">
           <div><p class="eyebrow">PROCESSING DESK · 03</p><h2 id="jobsTitle">处理记录</h2></div>
@@ -337,6 +357,6 @@
       <p>更少回放，更多推进。</p>
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
-    <script src="/assets/app.js?v=20261025-13" defer></script>
+    <script src="/assets/app.js?v=20261025-15" defer></script>
   </body>
 </html>

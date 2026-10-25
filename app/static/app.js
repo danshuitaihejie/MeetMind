@@ -25,6 +25,8 @@ const state = {
   renderedChatSessionId: null,
   renderedChatNoteId: null,
   desktopMeetingListSignature: "",
+  sourceReturnView: "chat",
+  sourceSelectionToken: 0,
 };
 
 const desktopMedia = window.matchMedia("(min-width: 1100px)");
@@ -67,6 +69,14 @@ const elements = {
   chatSelectNone: $("#chatSelectNone"),
   chatHint: $("#chatHint"),
   chatMessages: $("#chatMessages"),
+  sourcePlayer: $("#sourcePlayer"),
+  sourcePlayerMeeting: $("#sourcePlayerMeeting"),
+  sourcePlayerList: $("#sourcePlayerList"),
+  sourcePlayerContext: $("#sourcePlayerContext"),
+  sourcePlayerStatus: $("#sourcePlayerStatus"),
+  sourcePlayerMedia: $("#sourcePlayerMedia"),
+  sourcePlayerOriginal: $("#sourcePlayerOriginal"),
+  sourcePlayerClose: $("#sourcePlayerClose"),
   chatForm: $("#chatForm"),
   chatQuestion: $("#chatQuestion"),
   chatSend: $("#chatSend"),
@@ -509,11 +519,17 @@ function meetingTitle(job) {
 }
 
 function setDesktopView(view) {
+  if (state.desktopView === "source" && view !== "source") {
+    state.sourceSelectionToken += 1;
+    for (const media of elements.sourcePlayerMedia.querySelectorAll("audio, video")) media.pause();
+    elements.sourcePlayerMedia.replaceChildren();
+  }
   state.desktopView = view;
   if (view !== "chat") clearChatSelection();
   elements.chatNotesPanel.classList.toggle("hidden", view !== "notes");
+  elements.sourcePlayer.classList.toggle("hidden", view !== "source");
   elements.chatNotesToggle.setAttribute("aria-expanded", String(view === "notes"));
-  for (const name of ["chat", "jobs", "upload", "notes"]) {
+  for (const name of ["chat", "jobs", "upload", "notes", "source"]) {
     document.body.classList.toggle(`desktop-view-${name}`, view === name);
   }
   document.body.classList.toggle("show-upload", view === "upload");
@@ -759,6 +775,137 @@ function renderAnnotatedMessageBody(body, message) {
   body.appendChild(document.createTextNode(content.slice(position)));
 }
 
+function sourceTime(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(total / 3600)).padStart(2, "0")}:${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+async function selectSourcePassage(source, passage, button) {
+  const selectionToken = ++state.sourceSelectionToken;
+  for (const item of elements.sourcePlayerList.querySelectorAll("button")) {
+    item.classList.toggle("active", item === button);
+  }
+  elements.sourcePlayerMedia.replaceChildren();
+  const sourceJob = state.jobs.find((job) => job.id === source.job_id);
+  const title = sourceJob ? meetingTitle(sourceJob) : source.filename;
+  elements.sourcePlayerMeeting.textContent = `${title || "会议主题未提取"} · ${source.filename}`;
+  const mediaURL = `/api/jobs/${encodeURIComponent(source.job_id)}/source`;
+  elements.sourcePlayerOriginal.href = mediaURL;
+  const hasPassage = Boolean(passage);
+  let position = passage || { text: "暂无匹配的转写片段，从原片开头播放。", start_seconds: 0 };
+  elements.sourcePlayerContext.textContent = position.text;
+  if (hasPassage && !Number.isFinite(position.start_seconds)) {
+    elements.sourcePlayerStatus.textContent = "正在从原始音视频定位这段话，首次定位可能需要等待…";
+    try {
+      position = await requestJSON(`/api/jobs/${encodeURIComponent(source.job_id)}/locate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: passage.text }),
+      });
+      Object.assign(passage, position);
+    } catch (error) {
+      if (selectionToken === state.sourceSelectionToken && state.desktopView === "source") {
+        elements.sourcePlayerStatus.textContent = error.message || "暂时无法定位，可打开完整原始文件";
+      }
+      return;
+    }
+  }
+  if (selectionToken !== state.sourceSelectionToken || state.desktopView !== "source") return;
+  button.querySelector("span").textContent = sourceTime(position.start_seconds);
+  const timeRange = Number.isFinite(position.end_seconds)
+    ? `${sourceTime(position.start_seconds)}–${sourceTime(position.end_seconds)}`
+    : sourceTime(position.start_seconds);
+  elements.sourcePlayerContext.textContent = `${timeRange} · ${position.text}`;
+  elements.sourcePlayerStatus.textContent = hasPassage
+    ? "已定位到原片。可继续播放，查看前后语境。"
+    : "暂无可靠的片段位置，现从原片开头播放。";
+  const video = /\.(mp4|mov|mpeg|webm|mkv)$/i.test(source.filename);
+  const media = document.createElement(video ? "video" : "audio");
+  media.controls = true;
+  media.preload = "metadata";
+  media.setAttribute("aria-label", `原始音视频：${source.filename}`);
+  const seekTo = Math.max(0, position.start_seconds - 2);
+  media.src = `${mediaURL}#t=${seekTo}`;
+  media.addEventListener("loadedmetadata", () => {
+    try { media.currentTime = seekTo; } catch { /* Media fragments remain as fallback. */ }
+  }, { once: true });
+  if (video) {
+    media.addEventListener("error", () => {
+      if (media.dataset.fallback || selectionToken !== state.sourceSelectionToken) return;
+      media.dataset.fallback = "audio";
+      elements.sourcePlayerStatus.textContent = "浏览器无法播放此视频格式，已切换到同时间轴的原速音轨。";
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "metadata";
+      audio.src = `/api/jobs/${encodeURIComponent(source.job_id)}/source-audio#t=${seekTo}`;
+      audio.addEventListener("loadedmetadata", () => {
+        try { audio.currentTime = seekTo; } catch { /* Keep fragment seek. */ }
+      }, { once: true });
+      elements.sourcePlayerMedia.replaceChildren(audio);
+      audio.play().catch(() => {});
+    }, { once: true });
+  }
+  elements.sourcePlayerMedia.appendChild(media);
+  media.play().catch(() => {});
+}
+
+function renderSourceEvidence(sources) {
+  const evidence = document.createElement("div");
+  evidence.className = "chat-evidence";
+  const count = sources.reduce((sum, source) => sum + (source.passages?.length || 0), 0);
+  const preview = document.createElement("span");
+  preview.textContent = sources.flatMap((source) => source.passages || [])[0]?.text
+    || "可查看完整原始文件";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = `查看原片与上下文 · ${count} 段 →`;
+  button.addEventListener("click", () => openSourceEvidence(sources, button));
+  evidence.append(preview, button);
+  return evidence;
+}
+
+function openSourceEvidence(sources, trigger) {
+  state.sourceReturnView = state.desktopView === "notes" ? "notes" : "chat";
+  elements.sourcePlayerClose.textContent = state.sourceReturnView === "notes"
+    ? "← 返回标注笔记" : "← 返回问会议";
+  state.sourceTrigger = trigger;
+  elements.sourcePlayerList.replaceChildren();
+  const entries = sources.flatMap((source) => (
+    source.passages?.length
+      ? source.passages.map((passage) => ({ source, passage }))
+      : [{ source, passage: null }]
+  ));
+  for (const { source, passage } of entries) {
+    const button = document.createElement("button");
+    button.type = "button";
+    const job = state.jobs.find((item) => item.id === source.job_id);
+    const title = document.createElement("strong");
+    title.textContent = job ? meetingTitle(job) || source.filename : source.filename;
+    const time = document.createElement("span");
+    time.textContent = Number.isFinite(passage?.start_seconds)
+      ? sourceTime(passage.start_seconds) : "待定位";
+    const excerpt = document.createElement("small");
+    excerpt.textContent = passage?.text || "查看完整原始文件";
+    button.append(title, time, excerpt);
+    button.addEventListener("click", () => selectSourcePassage(source, passage, button));
+    elements.sourcePlayerList.appendChild(button);
+  }
+  setDesktopView("source");
+  const first = elements.sourcePlayerList.querySelector("button");
+  if (first) first.click();
+  elements.sourcePlayerClose.focus({ preventScroll: true });
+}
+
+function closeSourcePlayer() {
+  const returnView = state.sourceReturnView;
+  setDesktopView(returnView);
+  if (!desktopMedia.matches) {
+    (returnView === "notes" ? elements.chatNotesPanel : elements.chatSection)
+      .scrollIntoView({ behavior: "auto", block: "start" });
+  }
+  state.sourceTrigger?.focus({ preventScroll: true });
+}
+
 function renderChatMessages() {
   const ids = selectedChatIds();
   const messages = state.chatSessions.find((session) => session.id === state.activeChatSessionId)?.messages || [];
@@ -795,33 +942,7 @@ function renderChatMessages() {
       article.appendChild(note);
     }
     if (message.role === "assistant" && message.sources?.length) {
-      const sources = document.createElement("div");
-      sources.className = "chat-sources";
-      const caption = document.createElement("span");
-      caption.textContent = "参考会议";
-      sources.appendChild(caption);
-      for (const source of message.sources) {
-        const button = document.createElement("button");
-        button.type = "button";
-        const sourceJob = state.jobs.find((job) => job.id === source.job_id);
-        button.textContent = sourceJob
-          ? `${meetingTitle(sourceJob) || "会议主题未提取"} · ${source.filename}`
-          : source.filename;
-        button.title = source.created_at
-          ? new Date(source.created_at).toLocaleString("zh-CN") : source.filename;
-        button.addEventListener("click", () => {
-          if (!state.jobs.some((job) => job.id === source.job_id)) return;
-          state.expandedJobId = source.job_id;
-          if (desktopMedia.matches) setDesktopView("jobs");
-          renderJobs();
-          if (desktopMedia.matches) elements.jobsList.scrollTop = 0;
-          else document.querySelector(`[data-job-id="${CSS.escape(source.job_id)}"]`)?.scrollIntoView({
-            behavior: "smooth", block: "start",
-          });
-        });
-        sources.appendChild(button);
-      }
-      article.appendChild(sources);
+      article.appendChild(renderSourceEvidence(message.sources));
     }
     elements.chatMessages.appendChild(article);
   }
@@ -982,6 +1103,8 @@ function renderChatNotes() {
     const answer = document.createElement("p");
     answer.textContent = exchange.answer || "暂无解释";
     block.appendChild(answer);
+    const evidence = exchange.sources?.length ? exchange.sources : active.sources;
+    if (evidence?.length) block.appendChild(renderSourceEvidence(evidence));
     elements.chatNoteExchanges.appendChild(block);
   }
   if (!active.exchanges?.length) {
@@ -989,12 +1112,6 @@ function renderChatNotes() {
     empty.className = "chat-notes-status";
     empty.textContent = "暂无解释，可以在下方提问。";
     elements.chatNoteExchanges.appendChild(empty);
-  }
-  if (active.sources?.length) {
-    const sources = document.createElement("p");
-    sources.className = "chat-note-sources";
-    sources.textContent = `参考会议：${active.sources.map((source) => source.filename).join("、")}`;
-    elements.chatNoteExchanges.appendChild(sources);
   }
   if (changedNote) elements.chatNoteDetail.scrollTop = 0;
   elements.chatNoteAsk.disabled = state.chatNoteBusy;
@@ -1843,6 +1960,7 @@ elements.chatSelectionAction.addEventListener("pointerdown", (event) => event.pr
 elements.chatSelectionAction.addEventListener("click", createChatNote);
 elements.chatNotesToggle.addEventListener("click", () => openChatNotes());
 elements.chatNotesClose.addEventListener("click", closeChatNotes);
+elements.sourcePlayerClose.addEventListener("click", closeSourcePlayer);
 elements.chatNotesPanel.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeChatNotes();
 });

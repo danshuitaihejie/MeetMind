@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import shutil
 import uuid
 from pathlib import Path
@@ -10,16 +11,19 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.ai import AIConfigurationError, AIService, MiniMaxAPIError
-from app.chat import available_jobs, build_context
+from app.alignment import ensure_original_audio, ensure_segments, locate_text, source_path
+from app.chat import add_source_passages, available_jobs, build_context
 from app.chat_notes import ChatNoteStore
 from app.chat_sessions import ChatSessionStore
 from app.config import Settings
 from app.media import MediaProcessor
 from app.models import (
+    ChatLocateRequest,
     ChatNote,
     ChatNoteCreate,
     ChatNoteExchange,
     ChatNoteQuestion,
+    ChatPassage,
     ChatPronunciation,
     ChatRequest,
     ChatResponse,
@@ -120,6 +124,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except MiniMaxAPIError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        sources = add_source_passages(
+            jobs, sources, f"{phrase} {source_excerpt} {question} {answer}", store.root,
+        )
         return answer, sources, pronunciation
 
     def answer_chat(question: str, jobs: list[Job], history: list[ChatTurn]) -> ChatResponse:
@@ -137,7 +144,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except MiniMaxAPIError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        sources = add_source_passages(jobs, sources, f"{question} {answer}", store.root)
         return ChatResponse(answer=answer, sources=sources, retrieved=retrieved)
+
+    def restore_session_passages(session: ChatSession) -> ChatSession:
+        jobs = [job for job_id in session.scope_job_ids if (job := store.get(job_id))]
+        for index, message in enumerate(session.messages):
+            if message.role != "assistant" or not message.sources:
+                continue
+            if any(source.passages for source in message.sources):
+                continue
+            question = session.messages[index - 1].content if index else ""
+            message.sources = add_source_passages(
+                jobs, message.sources, f"{question} {message.content}", store.root,
+            )
+        return session
+
+    def restore_note_passages(note: ChatNote) -> ChatNote:
+        jobs = [job for job_id in note.scope_job_ids if (job := store.get(job_id))]
+        for exchange in note.exchanges:
+            if exchange.sources and any(source.passages for source in exchange.sources):
+                continue
+            base = exchange.sources or note.sources
+            exchange.sources = add_source_passages(
+                jobs, base,
+                f"{note.phrase} {note.source_excerpt} {exchange.question} {exchange.answer}",
+                store.root,
+            )
+        return note
 
     @app.post("/api/chat", response_model=ChatResponse)
     def ask_meetings(request: ChatRequest) -> ChatResponse:
@@ -155,7 +189,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/chat/sessions", response_model=list[ChatSession])
     def list_chat_sessions() -> list[ChatSession]:
-        return session_store.list()
+        return [restore_session_passages(session) for session in session_store.list()]
 
     @app.post("/api/chat/sessions", response_model=ChatSession, status_code=201)
     def create_chat_session(request: ChatSessionCreate) -> ChatSession:
@@ -168,7 +202,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = session_store.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="对话不存在")
-        return session
+        return restore_session_passages(session)
 
     @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatSession)
     def ask_chat_session(session_id: str, request: ChatSessionQuestion) -> ChatSession:
@@ -234,7 +268,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/chat/notes", response_model=list[ChatNote])
     def list_chat_notes() -> list[ChatNote]:
-        return note_store.list()
+        return [restore_note_passages(note) for note in note_store.list()]
 
     @app.post("/api/chat/notes", response_model=ChatNote, status_code=201)
     def create_chat_note(request: ChatNoteCreate) -> ChatNote:
@@ -267,7 +301,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_id=request.session_id,
             selection_start=request.selection_start,
             selection_end=request.selection_end,
-            exchanges=[ChatNoteExchange(question="释义", answer=answer)],
+            exchanges=[ChatNoteExchange(question="释义", answer=answer, sources=sources)],
             sources=sources,
             pronunciation=pronunciation,
         )
@@ -289,7 +323,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         try:
             return note_store.add_exchange(
-                note_id, ChatNoteExchange(question=question, answer=answer), sources,
+                note_id,
+                ChatNoteExchange(question=question, answer=answer, sources=sources),
+                sources,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="标注不存在") from exc
@@ -490,6 +526,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}/audio", response_class=FileResponse)
     def download_audio(job_id: str) -> FileResponse:
         return artifact(job_id, "compressed.mp3", "audio/mpeg")
+
+    @app.get("/api/jobs/{job_id}/source", response_class=FileResponse)
+    def original_media(job_id: str) -> FileResponse:
+        job = store.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        suffix = Path(job.filename).suffix.lower()
+        if suffix not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=404, detail="原始文件不存在")
+        path = source_path(store, job)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="原始文件不存在")
+        media_type = mimetypes.guess_type(job.filename)[0] or "application/octet-stream"
+        return FileResponse(
+            path, media_type=media_type, filename=job.filename,
+            content_disposition_type="inline",
+        )
+
+    @app.post("/api/jobs/{job_id}/locate", response_model=ChatPassage)
+    def locate_original_media(job_id: str, request: ChatLocateRequest) -> ChatPassage:
+        job = store.get(job_id)
+        if not job or job.status != JobStatus.completed:
+            raise HTTPException(status_code=404, detail="会议不存在")
+        if not source_path(store, job).is_file():
+            raise HTTPException(status_code=404, detail="原始音视频文件不存在")
+        alignment_ai = ai.with_usage_recorder(
+            lambda call: store.record_usage(job_id, call),
+            operation_override="source_alignment",
+        )
+        try:
+            segments = ensure_segments(store, job, media, alignment_ai)
+        except AIConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except (MiniMaxAPIError, RuntimeError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        result = locate_text(request.text, segments)
+        if result is None:
+            raise HTTPException(status_code=404, detail="未能在原媒体中准确定位这段话")
+        return result
+
+    @app.get("/api/jobs/{job_id}/source-audio", response_class=FileResponse)
+    def original_media_audio(job_id: str) -> FileResponse:
+        job = store.get(job_id)
+        if not job or not source_path(store, job).is_file():
+            raise HTTPException(status_code=404, detail="原始音视频文件不存在")
+        try:
+            path = ensure_original_audio(store, job, media)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return FileResponse(path, media_type="audio/mpeg", filename="original_speed.mp3",
+                            content_disposition_type="inline")
 
     @app.get("/api/jobs/{job_id}/transcript", response_class=FileResponse)
     def download_transcript(job_id: str) -> FileResponse:

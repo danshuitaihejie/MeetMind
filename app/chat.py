@@ -4,8 +4,9 @@ import json
 import math
 import re
 from collections import Counter
+from pathlib import Path
 
-from app.models import ChatRequest, ChatSource, Job, JobStatus
+from app.models import ChatPassage, ChatRequest, ChatSource, Job, JobStatus, TranscriptSegment
 
 MAX_CONTEXT_CHARS = 90_000
 CHUNK_CHARS = 1800
@@ -134,3 +135,71 @@ def build_context(jobs: list[Job], request: ChatRequest) -> tuple[str, list[Chat
         for job in selected_jobs
     ]
     return context, sources, True
+
+
+def _transcript_windows(transcript: str) -> list[str]:
+    """Keep short, readable pieces of the original transcript for verification."""
+    windows: list[str] = []
+    for paragraph in re.split(r"(?<=[。！？!?\n])", transcript):
+        paragraph = paragraph.strip()
+        for start in range(0, len(paragraph), 320):
+            text = paragraph[start:start + 320].strip()
+            if text:
+                windows.append(text)
+    return windows
+
+
+def _timed_segments(root: Path, job_id: str) -> list[TranscriptSegment]:
+    for path in (
+        root / job_id / "review" / "segments.corrected.json",
+        root / job_id / "review" / "segments.json",
+        root / job_id / "alignment" / "segments.json",
+    ):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, list):
+                segments = [TranscriptSegment.model_validate(item) for item in payload]
+                if segments:
+                    return segments
+        except (OSError, ValueError):
+            continue
+    return []
+
+
+def add_source_passages(
+    jobs: list[Job], sources: list[ChatSource], query: str, root: Path,
+) -> list[ChatSource]:
+    """Attach searchable original transcript excerpts; timecodes require actual alignment."""
+    jobs_by_id = {job.id: job for job in jobs}
+    query_terms = _terms(query)
+    enriched: list[ChatSource] = []
+    for source in sources:
+        job = jobs_by_id.get(source.job_id)
+        if not job or not job.transcript:
+            enriched.append(source)
+            continue
+        segments = _timed_segments(root, job.id)
+        if segments:
+            candidates = [
+                ChatPassage(
+                    text=segment.text.strip(),
+                    start_seconds=segment.start_seconds,
+                    end_seconds=segment.end_seconds,
+                )
+                for segment in segments if segment.text.strip()
+            ]
+        else:
+            candidates = [
+                ChatPassage(text=text) for text in _transcript_windows(job.transcript)
+            ]
+        ranked = sorted(
+            enumerate(candidates),
+            key=lambda item: (len(_terms(item[1].text) & query_terms), -item[0]),
+            reverse=True,
+        )
+        passages = [
+            passage for _, passage in ranked
+            if _terms(passage.text) & query_terms
+        ][:2]
+        enriched.append(source.model_copy(update={"passages": passages}))
+    return enriched

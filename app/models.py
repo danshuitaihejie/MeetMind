@@ -107,10 +107,21 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = Field(default_factory=list, max_length=10)
 
 
+class ChatPassage(BaseModel):
+    text: str
+    start_seconds: float | None = Field(default=None, ge=0)
+    end_seconds: float | None = Field(default=None, ge=0)
+
+
+class ChatLocateRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
 class ChatSource(BaseModel):
     job_id: str
     filename: str
     created_at: datetime
+    passages: list[ChatPassage] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -182,6 +193,7 @@ class ChatNoteQuestion(BaseModel):
 class ChatNoteExchange(BaseModel):
     question: str
     answer: str
+    sources: list[ChatSource] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
