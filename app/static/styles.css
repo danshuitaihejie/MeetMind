@@ -196,37 +196,38 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 .chat-note-marker { display: inline; padding: 0 1px; border: 0; border-bottom: 2px solid var(--accent); border-radius: 0; background: #ffdd9d; color: #41250d; font: inherit; font-weight: 700; line-height: inherit; cursor: pointer; white-space: pre-wrap; }
 .chat-note-marker:hover { background: #ffd077; }
 .chat-selection-action { position: fixed; z-index: 30; padding: 9px 12px; border: 1px solid var(--accent-dark); background: var(--accent); color: white; box-shadow: var(--shadow); font-size: 11px; font-weight: 700; cursor: pointer; }
-.chat-notes-panel { position: fixed; z-index: 25; top: 0; right: 0; width: min(470px, 100vw); height: 100dvh; padding: 25px; overflow-y: auto; background: var(--white); border-left: 1px solid var(--line); box-shadow: -18px 0 60px rgb(32 28 20 / 18%); }
+.chat-notes-panel { position: fixed; z-index: 25; top: 0; right: 0; width: min(470px, 100vw); height: 100dvh; padding: 25px; display: flex; flex-direction: column; overflow: hidden; background: var(--white); border-left: 1px solid var(--line); box-shadow: -18px 0 60px rgb(32 28 20 / 18%); }
 .chat-notes-heading { display: flex; align-items: start; justify-content: space-between; gap: 15px; }
 .chat-notes-heading h2 { margin: 5px 0 0; font: 400 27px Georgia, "Songti SC", serif; }
 .chat-notes-close { width: 36px; height: 36px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 24px; line-height: 1; cursor: pointer; }
 .chat-notes-intro, .chat-notes-status { color: var(--muted); font-size: 11px; line-height: 1.65; }
 .chat-notes-intro { margin: 17px 0; }
+.chat-notes-panel.has-active-note .chat-notes-intro { display: none; }
 .chat-notes-status { margin: 0 0 10px; }
-.chat-notes-list { display: grid; gap: 7px; max-height: 185px; overflow-y: auto; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
-.chat-notes-item { min-width: 0; min-height: 53px; padding: 9px; border: 1px solid var(--line); background: #f8f5ee; color: var(--ink); text-align: left; cursor: pointer; }
+.chat-notes-list { flex: none; display: flex; gap: 7px; min-height: 0; overflow-x: auto; overflow-y: hidden; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
+.chat-notes-item { flex: 0 0 170px; min-width: 0; min-height: 53px; padding: 9px; border: 1px solid var(--line); background: #f8f5ee; color: var(--ink); text-align: left; cursor: pointer; }
 .chat-notes-item.active { border-color: var(--accent); background: #fff3e9; }
 .chat-notes-item strong, .chat-notes-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-notes-item strong { font-size: 11px; }
 .chat-notes-item span { margin-top: 7px; color: var(--muted); font-size: 10px; }
-.chat-note-detail { padding-top: 19px; }
+.chat-note-detail { min-height: 0; flex: 1; padding: 19px 6px 12px 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-note-detail h3 { margin: 0; font: 400 23px Georgia, "Songti SC", serif; overflow-wrap: anywhere; }
 .chat-note-pronunciation { display: flex; align-items: center; gap: 10px; margin-top: 8px; color: var(--muted); font: 13px ui-monospace, monospace; }
 .chat-note-pronunciation button { width: 32px; height: 30px; border: 1px solid var(--line); background: var(--white); cursor: pointer; }
 .chat-note-pronunciation button:disabled { opacity: .45; cursor: not-allowed; }
 .chat-note-delete { margin-top: 16px; padding: 8px 0; border: 0; border-bottom: 1px solid #e7b8ab; background: transparent; color: #ad2e14; font-size: 11px; cursor: pointer; }
-.chat-note-excerpt { max-height: 130px; margin: 12px 0; padding: 11px 12px; overflow-y: auto; background: #f8f5ee; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.65; }
+.chat-note-excerpt { margin: 12px 0; padding: 11px 12px; background: #f8f5ee; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.65; }
 .chat-note-exchanges { display: grid; gap: 10px; }
 .chat-note-exchange { padding: 13px; border-left: 2px solid var(--accent); background: #f8f5ee; }
 .chat-note-exchange p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
 .chat-note-exchange .chat-note-exchange-question { margin-bottom: 8px; color: var(--accent-dark); font-weight: 700; }
 .chat-note-sources { margin: 3px 0; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
-.chat-note-form { display: grid; gap: 8px; margin-top: 18px; }
-.chat-note-form label { font-size: 11px; font-weight: 700; }
-.chat-note-form textarea { width: 100%; padding: 11px; border: 1px solid var(--line); background: var(--white); color: var(--ink); resize: vertical; font-size: 12px; line-height: 1.6; }
-.chat-note-form button { justify-self: end; padding: 10px 17px; border: 0; background: var(--accent); color: white; font-size: 11px; font-weight: 700; cursor: pointer; }
+.chat-note-form { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 12px -25px -25px; padding: 13px 25px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--white); box-shadow: 0 -10px 24px rgb(32 28 20 / 6%); }
+.chat-note-form label { grid-column: 1 / -1; font-size: 11px; font-weight: 700; }
+.chat-note-form textarea { grid-column: 1; min-width: 0; min-height: 68px; padding: 11px; border: 1px solid var(--line); background: var(--white); color: var(--ink); resize: none; font-size: 12px; line-height: 1.6; }
+.chat-note-form button { grid-column: 2; align-self: stretch; padding: 10px 17px; border: 0; background: var(--accent); color: white; font-size: 11px; font-weight: 700; cursor: pointer; }
 .chat-note-form button:disabled, .chat-note-form textarea:disabled { opacity: .5; cursor: wait; }
-.chat-notes-error { color: #ad2e14; font-size: 11px; line-height: 1.6; }
+.chat-notes-error { flex: none; margin: 7px 0 0; color: #ad2e14; font-size: 11px; line-height: 1.6; }
 .chat-retrieval-note { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .chat-sources { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
 .chat-sources > span { color: var(--muted); font-size: 10px; }
@@ -408,6 +409,96 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 footer { max-width: 1240px; margin: 0 auto; padding: 30px 32px 45px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
 footer span { color: var(--ink); font-weight: 800; } footer p { margin: 0; }
 .hidden { display: none !important; }
+.desktop-meeting-sidebar { display: none; }
+
+/* Desktop workbench: keep the document fixed to the viewport and scroll only
+   the active work area (plus the meeting picker on the left). */
+@media (min-width: 1100px) {
+  html, body { height: 100%; overflow: hidden; }
+  body { min-height: 0; }
+  .topbar { height: 64px; min-height: 64px; padding-inline: 32px; }
+  main {
+    width: 100%; max-width: none; height: calc(100dvh - 64px); min-height: 0;
+    margin: 0; padding: 18px 28px 22px; overflow: hidden;
+  }
+  .hero, footer { display: none; }
+  body.desktop-view-jobs main {
+    display: grid; grid-template-columns: 250px minmax(0, 1fr); align-items: stretch; gap: 24px;
+  }
+  body.desktop-view-jobs .desktop-meeting-sidebar {
+    min-width: 0; min-height: 0; display: flex; flex-direction: column;
+    padding: 16px; border: 1px solid var(--line); background: var(--white);
+  }
+  .desktop-meeting-heading { flex: none; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 2px 2px 14px; border-bottom: 1px solid var(--line); }
+  .desktop-meeting-heading strong { font-size: 14px; }
+  .desktop-meeting-heading span { color: var(--muted); font-size: 11px; }
+  .desktop-meeting-list { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  .desktop-meeting-item { display: block; width: 100%; padding: 13px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+  .desktop-meeting-item:hover { background: #f8f5ee; }
+  .desktop-meeting-item.active { background: #fff3e9; box-shadow: inset 3px 0 var(--accent); }
+  .desktop-meeting-item strong, .desktop-meeting-item span { display: block; overflow: hidden; text-overflow: ellipsis; }
+  .desktop-meeting-item strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 12px; line-height: 1.45; }
+  .desktop-meeting-item span { margin-top: 5px; color: var(--muted); white-space: nowrap; font-size: 10px; }
+  .desktop-meeting-item:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: -2px; }
+  .topbar-link[aria-current="page"] { color: var(--accent-dark); border-color: var(--accent); font-weight: 700; }
+
+  body.desktop-view-chat .workspace,
+  body.desktop-view-chat .jobs-section,
+  body.desktop-view-jobs .workspace,
+  body.desktop-view-jobs .chat-section,
+  body.desktop-view-upload .desktop-meeting-sidebar,
+  body.desktop-view-upload .chat-section,
+  body.desktop-view-upload .jobs-section { display: none; }
+  body.desktop-view-upload .workspace { display: grid; height: 100%; min-height: 0; grid-template-columns: minmax(0, 1.65fr) minmax(300px, .72fr); align-items: start; }
+  body.desktop-view-upload .upload-panel, body.desktop-view-upload .method-panel { max-height: 100%; overflow-y: auto; }
+  body.desktop-view-upload .method-panel { position: static; }
+
+  body.desktop-view-chat .chat-section,
+  body.desktop-view-jobs .jobs-section {
+    min-width: 0; min-height: 0; margin: 0; overflow: hidden;
+  }
+  body.desktop-view-chat .chat-section { display: flex; flex-direction: column; }
+  body.desktop-view-chat .chat-section > .section-heading { flex: none; margin-bottom: 14px; }
+  body.desktop-view-chat .section-heading h2 { font-size: 30px; }
+  body.desktop-view-chat .chat-panel {
+    min-height: 0; flex: 1; padding: 20px; overflow: hidden;
+    grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(210px, 250px) minmax(0, 1fr); gap: 20px;
+  }
+  body.desktop-view-chat .chat-history { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  body.desktop-view-chat .chat-session-list { min-height: 0; max-height: none; flex: 1; align-content: start; overflow-y: auto; overscroll-behavior: contain; }
+  body.desktop-view-chat .chat-workspace { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  body.desktop-view-chat .chat-toolbar { flex: none; }
+  body.desktop-view-chat .chat-hint { flex: none; margin: 10px 0 12px; }
+  body.desktop-view-chat .chat-messages { min-height: 0; max-height: none; flex: 1; overscroll-behavior: contain; }
+  body.desktop-view-chat .chat-form { flex: none; margin-top: 12px; }
+  body.desktop-view-chat .chat-compose-wrap,
+  body.desktop-view-chat .chat-compose { flex: none; }
+  body.desktop-view-chat.chat-notes-open .chat-section { padding-right: clamp(520px, 40vw, 640px); }
+  body.desktop-view-chat.chat-notes-open .chat-panel { grid-template-columns: minmax(0, 1fr); }
+  body.desktop-view-chat.chat-notes-open .chat-history { display: none; }
+  body.desktop-view-chat .chat-notes-panel {
+    top: 64px; width: clamp(520px, 40vw, 640px); height: calc(100dvh - 64px);
+    padding: 24px 28px 28px;
+  }
+  body.desktop-view-chat .chat-note-form { margin-right: -28px; margin-bottom: -28px; margin-left: -28px; padding-right: 28px; padding-left: 28px; }
+
+  body.desktop-view-jobs .jobs-section { display: flex; flex-direction: column; }
+  body.desktop-view-jobs .jobs-section > .section-heading { flex: none; margin-bottom: 14px; }
+  body.desktop-view-jobs .jobs-list { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-right: 8px; }
+  body.desktop-view-jobs .job-summary { grid-template-columns: 46px minmax(0, 1fr) auto 36px; }
+  body.desktop-view-jobs .job-toggle { display: none; }
+  body.desktop-view-jobs .job-content-grid { grid-template-columns: minmax(0, 1.08fr) minmax(360px, .92fr); align-items: start; }
+  body.desktop-view-jobs .job-content-grid.single-pane,
+  body.desktop-view-jobs .job-content-grid.comparing { grid-template-columns: minmax(0, 1fr); }
+  body.desktop-view-jobs .compare-diff,
+  body.desktop-view-jobs .result-content,
+  body.desktop-view-jobs .review-panel,
+  body.desktop-view-jobs .review-list,
+  body.desktop-view-jobs .manual-review-match-list {
+    height: auto; min-height: 0; max-height: none; overflow: visible; overscroll-behavior: auto; scrollbar-gutter: auto;
+  }
+  body.desktop-view-jobs .review-apply { position: static; box-shadow: none; }
+}
 
 @media (max-width: 980px) {
   .job-content-grid { grid-template-columns: 1fr; }

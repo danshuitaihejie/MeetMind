@@ -21,7 +21,13 @@ const state = {
   chatNoteBusy: false,
   activeChatNoteId: null,
   chatSelection: null,
+  desktopView: null,
+  renderedChatSessionId: null,
+  renderedChatNoteId: null,
+  desktopMeetingListSignature: "",
 };
+
+const desktopMedia = window.matchMedia("(min-width: 1100px)");
 
 const elements = {
   systemStatus: $("#systemStatus"),
@@ -43,6 +49,8 @@ const elements = {
   formError: $("#formError"),
   emptyState: $("#emptyState"),
   jobsList: $("#jobsList"),
+  desktopMeetingList: $("#desktopMeetingList"),
+  desktopMeetingCount: $("#desktopMeetingCount"),
   refresh: $("#refreshJobs"),
   newMeeting: $("#newMeetingToggle"),
   uploadWorkspace: $("#uploadWorkspace"),
@@ -206,8 +214,9 @@ function upload() {
       elements.context.value = "";
       document.body.classList.remove("show-upload");
       elements.newMeeting.textContent = "新建会议";
+      if (desktopMedia.matches) setDesktopView("jobs");
       await loadJobs();
-      $("#jobsSection").scrollIntoView({ behavior: "smooth", block: "start" });
+      if (!desktopMedia.matches) $("#jobsSection").scrollIntoView({ behavior: "smooth", block: "start" });
       startPolling();
     } else {
       try { setError(JSON.parse(request.responseText).detail || "上传失败"); }
@@ -499,13 +508,68 @@ function meetingTitle(job) {
   return summary ? summary.slice(0, 80) : job.context.trim().slice(0, 80);
 }
 
+function setDesktopView(view) {
+  state.desktopView = view;
+  if (view !== "chat" && !elements.chatNotesPanel.classList.contains("hidden")) {
+    elements.chatNotesPanel.classList.add("hidden");
+    document.body.classList.remove("chat-notes-open");
+    elements.chatNotesToggle.setAttribute("aria-expanded", "false");
+  }
+  for (const name of ["chat", "jobs", "upload"]) {
+    document.body.classList.toggle(`desktop-view-${name}`, view === name);
+  }
+  document.body.classList.toggle("show-upload", view === "upload");
+  elements.newMeeting.textContent = view === "upload" ? "收起上传" : "新建会议";
+  for (const link of document.querySelectorAll("[data-desktop-view]")) {
+    if (link.dataset.desktopView === view) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+}
+
+function renderDesktopMeetingList() {
+  const list = elements.desktopMeetingList;
+  const signature = JSON.stringify(state.jobs.map((job) => [
+    job.id, job.filename, meetingTitle(job), job.status, job.id === state.expandedJobId,
+  ]));
+  if (signature === state.desktopMeetingListSignature) return;
+  state.desktopMeetingListSignature = signature;
+  const previousScroll = list.scrollTop;
+  const focusedJobId = list.contains(document.activeElement) ? document.activeElement.dataset.jobId : null;
+  list.replaceChildren();
+  elements.desktopMeetingCount.textContent = `${state.jobs.length} 场`;
+  const statusLabels = { queued: "排队中", processing: "处理中", completed: "已完成", failed: "失败" };
+  for (const job of state.jobs) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "desktop-meeting-item";
+    button.dataset.jobId = job.id;
+    button.classList.toggle("active", job.id === state.expandedJobId);
+    if (job.id === state.expandedJobId) button.setAttribute("aria-current", "true");
+    const title = document.createElement("strong");
+    title.textContent = meetingTitle(job) || job.filename;
+    const meta = document.createElement("span");
+    meta.textContent = `${job.filename} · ${statusLabels[job.status] || job.status}`;
+    button.append(title, meta);
+    button.addEventListener("click", () => {
+      state.expandedJobId = job.id;
+      setDesktopView("jobs");
+      renderJobs();
+      elements.jobsList.scrollTop = 0;
+    });
+    list.appendChild(button);
+  }
+  list.scrollTop = previousScroll;
+  if (focusedJobId) list.querySelector(`[data-job-id="${CSS.escape(focusedJobId)}"]`)?.focus({ preventScroll: true });
+}
+
 function openMeetingChat(jobId) {
   if (state.chatLoading) return;
   state.selectedChatJobIds = new Set([jobId]);
   clearMismatchedChatSession();
   setChatError();
   renderChatScope();
-  elements.chatSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (desktopMedia.matches) setDesktopView("chat");
+  else elements.chatSection.scrollIntoView({ behavior: "smooth", block: "start" });
   elements.chatQuestion.focus({ preventScroll: true });
 }
 
@@ -700,6 +764,10 @@ function renderAnnotatedMessageBody(body, message) {
 function renderChatMessages() {
   const ids = selectedChatIds();
   const messages = state.chatSessions.find((session) => session.id === state.activeChatSessionId)?.messages || [];
+  const previousScroll = elements.chatMessages.scrollTop;
+  const wasAtBottom = elements.chatMessages.scrollHeight - previousScroll - elements.chatMessages.clientHeight < 48;
+  const changedSession = state.renderedChatSessionId !== state.activeChatSessionId;
+  state.renderedChatSessionId = state.activeChatSessionId;
   elements.chatMessages.replaceChildren();
   if (!messages.length && !state.chatLoading) {
     const empty = document.createElement("p");
@@ -746,8 +814,10 @@ function renderChatMessages() {
         button.addEventListener("click", () => {
           if (!state.jobs.some((job) => job.id === source.job_id)) return;
           state.expandedJobId = source.job_id;
+          if (desktopMedia.matches) setDesktopView("jobs");
           renderJobs();
-          document.querySelector(`[data-job-id="${CSS.escape(source.job_id)}"]`)?.scrollIntoView({
+          if (desktopMedia.matches) elements.jobsList.scrollTop = 0;
+          else document.querySelector(`[data-job-id="${CSS.escape(source.job_id)}"]`)?.scrollIntoView({
             behavior: "smooth", block: "start",
           });
         });
@@ -763,7 +833,8 @@ function renderChatMessages() {
     pending.textContent = "正在会议纪要和转写中查找…";
     elements.chatMessages.appendChild(pending);
   }
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  elements.chatMessages.scrollTop = changedSession || wasAtBottom
+    ? elements.chatMessages.scrollHeight : previousScroll;
 }
 
 async function submitChat(event) {
@@ -860,6 +931,7 @@ function updateChatSelection() {
 
 function renderChatNotes() {
   elements.chatNotesCount.textContent = state.chatNotes.length ? `(${state.chatNotes.length})` : "";
+  const previousListScroll = elements.chatNotesList.scrollLeft;
   elements.chatNotesList.replaceChildren();
   if (state.chatNotesLoading) {
     elements.chatNotesStatus.textContent = "正在加载标注笔记…";
@@ -883,7 +955,12 @@ function renderChatNotes() {
     elements.chatNotesList.appendChild(button);
   }
   const active = state.chatNotes.find((note) => note.id === state.activeChatNoteId);
+  const changedNote = state.renderedChatNoteId !== active?.id;
+  state.renderedChatNoteId = active?.id || null;
+  elements.chatNotesList.scrollLeft = changedNote && active === state.chatNotes[0] ? 0 : previousListScroll;
   elements.chatNoteDetail.classList.toggle("hidden", !active);
+  elements.chatNoteForm.classList.toggle("hidden", !active);
+  elements.chatNotesPanel.classList.toggle("has-active-note", Boolean(active));
   if (!active) return;
   elements.chatNotePhrase.textContent = active.phrase;
   const pronunciation = active.pronunciation;
@@ -921,6 +998,7 @@ function renderChatNotes() {
     sources.textContent = `参考会议：${active.sources.map((source) => source.filename).join("、")}`;
     elements.chatNoteExchanges.appendChild(sources);
   }
+  if (changedNote) elements.chatNoteDetail.scrollTop = 0;
   elements.chatNoteAsk.disabled = state.chatNoteBusy;
   elements.chatNoteQuestion.disabled = state.chatNoteBusy;
   elements.chatNoteAsk.textContent = state.chatNoteBusy ? "解释中…" : "提问 →";
@@ -929,6 +1007,7 @@ function renderChatNotes() {
 function openChatNotes(noteId = null) {
   if (noteId) state.activeChatNoteId = noteId;
   elements.chatNotesPanel.classList.remove("hidden");
+  document.body.classList.add("chat-notes-open");
   elements.chatNotesToggle.setAttribute("aria-expanded", "true");
   renderChatNotes();
   if (noteId) elements.chatNoteQuestion.focus({ preventScroll: true });
@@ -937,6 +1016,7 @@ function openChatNotes(noteId = null) {
 
 function closeChatNotes() {
   elements.chatNotesPanel.classList.add("hidden");
+  document.body.classList.remove("chat-notes-open");
   elements.chatNotesToggle.setAttribute("aria-expanded", "false");
   elements.chatNotesToggle.focus({ preventScroll: true });
 }
@@ -995,6 +1075,7 @@ async function askChatNote(event) {
     return;
   }
   state.chatNoteBusy = true;
+  let answered = false;
   setChatNotesError();
   renderChatNotes();
   try {
@@ -1005,11 +1086,13 @@ async function askChatNote(event) {
     });
     state.chatNotes = [note, ...state.chatNotes.filter((item) => item.id !== note.id)];
     elements.chatNoteQuestion.value = "";
+    answered = true;
   } catch (error) {
     setChatNotesError(error.message || "追问失败，请稍后重试");
   } finally {
     state.chatNoteBusy = false;
     renderChatNotes();
+    if (answered) elements.chatNoteDetail.scrollTop = elements.chatNoteDetail.scrollHeight;
     elements.chatNoteQuestion.focus();
   }
 }
@@ -1429,6 +1512,7 @@ function renderJob(job) {
   toggle.setAttribute("aria-expanded", String(expanded));
   $("span", toggle).textContent = expanded ? "收起" : "展开";
   toggle.addEventListener("click", () => {
+    if (desktopMedia.matches) return;
     const shouldExpand = !card.classList.contains("expanded");
     document.querySelectorAll(".job-card.expanded").forEach((otherCard) => {
       if (otherCard === card) return;
@@ -1625,12 +1709,21 @@ function renderJobs() {
   ) {
     state.expandedJobId = state.jobs[0]?.id || null;
   }
+  if (desktopMedia.matches && !state.expandedJobId && state.jobs.length) {
+    state.expandedJobId = state.jobs[0].id;
+  }
   const hasJobs = state.jobs.length > 0;
   document.body.classList.toggle("has-jobs", hasJobs);
-  elements.newMeeting.classList.toggle("hidden", !hasJobs);
+  elements.newMeeting.classList.toggle("hidden", !hasJobs && !desktopMedia.matches);
+  const previousScroll = elements.jobsList.scrollTop;
   elements.jobsList.replaceChildren();
   elements.emptyState.classList.toggle("hidden", hasJobs);
-  for (const job of state.jobs) elements.jobsList.appendChild(renderJob(job));
+  const visibleJobs = desktopMedia.matches
+    ? state.jobs.filter((job) => job.id === state.expandedJobId)
+    : state.jobs;
+  for (const job of visibleJobs) elements.jobsList.appendChild(renderJob(job));
+  if (desktopMedia.matches) elements.jobsList.scrollTop = previousScroll;
+  renderDesktopMeetingList();
   renderChatScope();
 }
 
@@ -1639,6 +1732,10 @@ async function loadJobs() {
     const response = await fetch("/api/jobs", { cache: "no-store" });
     if (!response.ok) throw new Error("load failed");
     state.jobs = await response.json();
+    if (desktopMedia.matches && state.desktopView === null) {
+      const fromHash = window.location.hash === "#jobsSection" ? "jobs" : "chat";
+      setDesktopView(state.jobs.length ? fromHash : "upload");
+    }
     renderJobs();
     if (!state.jobs.some((job) => (
       ["queued", "processing"].includes(job.status)
@@ -1759,10 +1856,30 @@ elements.chatQuestion.addEventListener("keydown", (event) => {
   }
 });
 elements.newMeeting.addEventListener("click", () => {
+  if (desktopMedia.matches) {
+    setDesktopView(state.desktopView === "upload" ? (state.jobs.length ? "jobs" : "chat") : "upload");
+    return;
+  }
   const show = !document.body.classList.contains("show-upload");
   document.body.classList.toggle("show-upload", show);
   elements.newMeeting.textContent = show ? "收起上传" : "新建会议";
   if (show) elements.uploadWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+for (const link of document.querySelectorAll("[data-desktop-view]")) {
+  link.addEventListener("click", (event) => {
+    if (!desktopMedia.matches) return;
+    event.preventDefault();
+    setDesktopView(link.dataset.desktopView);
+  });
+}
+desktopMedia.addEventListener("change", () => {
+  if (desktopMedia.matches) {
+    setDesktopView(state.desktopView || (state.jobs.length ? "chat" : "upload"));
+  } else {
+    document.body.classList.remove("desktop-view-chat", "desktop-view-jobs", "desktop-view-upload", "show-upload");
+    elements.newMeeting.textContent = "新建会议";
+  }
+  renderJobs();
 });
 ["dragenter", "dragover"].forEach((name) => elements.dropzone.addEventListener(name, (event) => {
   event.preventDefault(); elements.dropzone.classList.add("dragging");

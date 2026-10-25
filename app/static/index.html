@@ -6,9 +6,9 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261025-8" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261025-10" />
   </head>
-  <body>
+  <body class="desktop-view-upload">
     <header class="topbar">
       <a class="brand" href="/" aria-label="MeetMind 首页">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
@@ -16,8 +16,8 @@
       </a>
       <div class="topbar-actions">
         <button class="topbar-link hidden" id="newMeetingToggle" type="button">新建会议</button>
-        <a class="topbar-link" href="#chatSection">问会议</a>
-        <a class="topbar-link" href="#jobsSection">处理记录</a>
+        <a class="topbar-link" href="#chatSection" data-desktop-view="chat">问会议</a>
+        <a class="topbar-link" href="#jobsSection" data-desktop-view="jobs">处理记录</a>
         <div class="system-status" id="systemStatus">
           <span class="status-dot"></span>
           <span>正在检查服务</span>
@@ -26,6 +26,10 @@
     </header>
 
     <main>
+      <aside class="desktop-meeting-sidebar" aria-label="会议列表">
+        <header class="desktop-meeting-heading"><strong>会议列表</strong><span id="desktopMeetingCount"></span></header>
+        <nav class="desktop-meeting-list" id="desktopMeetingList" aria-label="选择会议"></nav>
+      </aside>
       <section class="hero">
         <p class="eyebrow">MEETING INTELLIGENCE · 01</p>
         <h1>把漫长会议，<br /><em>压缩成清晰结论。</em></h1>
@@ -193,13 +197,13 @@
           <p class="chat-note-excerpt" id="chatNoteExcerpt"></p>
           <div class="chat-note-exchanges" id="chatNoteExchanges"></div>
           <button class="chat-note-delete" id="chatNoteDelete" type="button">删除标注</button>
-          <form class="chat-note-form" id="chatNoteForm">
-            <label for="chatNoteQuestion">继续追问</label>
-            <textarea id="chatNoteQuestion" rows="3" maxlength="2000" placeholder="例如：它在这次会议中具体指什么？"></textarea>
-            <button id="chatNoteAsk" type="submit">提问 →</button>
-          </form>
         </section>
         <p class="chat-notes-error hidden" id="chatNotesError" role="alert"></p>
+        <form class="chat-note-form hidden" id="chatNoteForm">
+          <label for="chatNoteQuestion">继续追问</label>
+          <textarea id="chatNoteQuestion" rows="2" maxlength="2000" placeholder="例如：它在这次会议中具体指什么？"></textarea>
+          <button id="chatNoteAsk" type="submit">提问 →</button>
+        </form>
       </aside>
 
       <section class="jobs-section" id="jobsSection" aria-labelledby="jobsTitle">
@@ -326,6 +330,6 @@
       <p>更少回放，更多推进。</p>
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
-    <script src="/assets/app.js?v=20261025-8" defer></script>
+    <script src="/assets/app.js?v=20261025-10" defer></script>
   </body>
 </html>
