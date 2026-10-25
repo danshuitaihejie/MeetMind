@@ -510,12 +510,10 @@ function meetingTitle(job) {
 
 function setDesktopView(view) {
   state.desktopView = view;
-  if (view !== "chat" && !elements.chatNotesPanel.classList.contains("hidden")) {
-    elements.chatNotesPanel.classList.add("hidden");
-    document.body.classList.remove("chat-notes-open");
-    elements.chatNotesToggle.setAttribute("aria-expanded", "false");
-  }
-  for (const name of ["chat", "jobs", "upload"]) {
+  if (view !== "chat") clearChatSelection();
+  elements.chatNotesPanel.classList.toggle("hidden", view !== "notes");
+  elements.chatNotesToggle.setAttribute("aria-expanded", String(view === "notes"));
+  for (const name of ["chat", "jobs", "upload", "notes"]) {
     document.body.classList.toggle(`desktop-view-${name}`, view === name);
   }
   document.body.classList.toggle("show-upload", view === "upload");
@@ -931,7 +929,7 @@ function updateChatSelection() {
 
 function renderChatNotes() {
   elements.chatNotesCount.textContent = state.chatNotes.length ? `(${state.chatNotes.length})` : "";
-  const previousListScroll = elements.chatNotesList.scrollLeft;
+  const previousListScroll = elements.chatNotesList.scrollTop;
   elements.chatNotesList.replaceChildren();
   if (state.chatNotesLoading) {
     elements.chatNotesStatus.textContent = "正在加载标注笔记…";
@@ -957,7 +955,7 @@ function renderChatNotes() {
   const active = state.chatNotes.find((note) => note.id === state.activeChatNoteId);
   const changedNote = state.renderedChatNoteId !== active?.id;
   state.renderedChatNoteId = active?.id || null;
-  elements.chatNotesList.scrollLeft = changedNote && active === state.chatNotes[0] ? 0 : previousListScroll;
+  elements.chatNotesList.scrollTop = changedNote && active === state.chatNotes[0] ? 0 : previousListScroll;
   elements.chatNoteDetail.classList.toggle("hidden", !active);
   elements.chatNoteForm.classList.toggle("hidden", !active);
   elements.chatNotesPanel.classList.toggle("has-active-note", Boolean(active));
@@ -1004,20 +1002,20 @@ function renderChatNotes() {
   elements.chatNoteAsk.textContent = state.chatNoteBusy ? "解释中…" : "提问 →";
 }
 
-function openChatNotes(noteId = null) {
+function openChatNotes(noteId = null, selectFirst = true) {
   if (noteId) state.activeChatNoteId = noteId;
-  elements.chatNotesPanel.classList.remove("hidden");
-  document.body.classList.add("chat-notes-open");
-  elements.chatNotesToggle.setAttribute("aria-expanded", "true");
+  else if (selectFirst && !state.chatNotes.some((note) => note.id === state.activeChatNoteId)) {
+    state.activeChatNoteId = state.chatNotes[0]?.id || null;
+  }
+  setDesktopView("notes");
   renderChatNotes();
   if (noteId) elements.chatNoteQuestion.focus({ preventScroll: true });
   else elements.chatNotesClose.focus({ preventScroll: true });
 }
 
 function closeChatNotes() {
-  elements.chatNotesPanel.classList.add("hidden");
-  document.body.classList.remove("chat-notes-open");
-  elements.chatNotesToggle.setAttribute("aria-expanded", "false");
+  setDesktopView("chat");
+  if (!desktopMedia.matches) elements.chatSection.scrollIntoView({ behavior: "auto", block: "start" });
   elements.chatNotesToggle.focus({ preventScroll: true });
 }
 
@@ -1043,7 +1041,7 @@ async function createChatNote() {
   clearChatSelection();
   window.getSelection()?.removeAllRanges();
   state.activeChatNoteId = null;
-  openChatNotes();
+  openChatNotes(null, false);
   state.chatNoteBusy = true;
   elements.chatNotesStatus.textContent = `正在解释「${selection.phrase}」…`;
   setChatNotesError();
@@ -1092,7 +1090,10 @@ async function askChatNote(event) {
   } finally {
     state.chatNoteBusy = false;
     renderChatNotes();
-    if (answered) elements.chatNoteDetail.scrollTop = elements.chatNoteDetail.scrollHeight;
+    if (answered) {
+      elements.chatNotesList.scrollTop = 0;
+      elements.chatNoteDetail.scrollTop = elements.chatNoteDetail.scrollHeight;
+    }
     elements.chatNoteQuestion.focus();
   }
 }
@@ -1824,7 +1825,7 @@ elements.chatNoteDelete.addEventListener("click", async () => {
   try {
     await requestJSON(`/api/chat/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
     state.chatNotes = state.chatNotes.filter((note) => note.id !== id);
-    state.activeChatNoteId = null;
+    state.activeChatNoteId = state.chatNotes[0]?.id || null;
     renderChatNotes();
     renderChatMessages();
   } catch (error) { setChatNotesError(error.message || "删除标注失败"); }
@@ -1840,10 +1841,7 @@ elements.chatMessages.addEventListener("keydown", (event) => {
 document.addEventListener("selectionchange", () => window.setTimeout(updateChatSelection, 0));
 elements.chatSelectionAction.addEventListener("pointerdown", (event) => event.preventDefault());
 elements.chatSelectionAction.addEventListener("click", createChatNote);
-elements.chatNotesToggle.addEventListener("click", () => {
-  if (elements.chatNotesPanel.classList.contains("hidden")) openChatNotes();
-  else closeChatNotes();
-});
+elements.chatNotesToggle.addEventListener("click", () => openChatNotes());
 elements.chatNotesClose.addEventListener("click", closeChatNotes);
 elements.chatNotesPanel.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeChatNotes();
@@ -1860,6 +1858,7 @@ elements.newMeeting.addEventListener("click", () => {
     setDesktopView(state.desktopView === "upload" ? (state.jobs.length ? "jobs" : "chat") : "upload");
     return;
   }
+  if (state.desktopView === "notes") setDesktopView("chat");
   const show = !document.body.classList.contains("show-upload");
   document.body.classList.toggle("show-upload", show);
   elements.newMeeting.textContent = show ? "收起上传" : "新建会议";
@@ -1867,15 +1866,22 @@ elements.newMeeting.addEventListener("click", () => {
 });
 for (const link of document.querySelectorAll("[data-desktop-view]")) {
   link.addEventListener("click", (event) => {
-    if (!desktopMedia.matches) return;
-    event.preventDefault();
-    setDesktopView(link.dataset.desktopView);
+    const view = link.dataset.desktopView;
+    if (view === "notes") {
+      event.preventDefault();
+      openChatNotes();
+    } else if (desktopMedia.matches) {
+      event.preventDefault();
+      setDesktopView(view);
+    } else if (state.desktopView === "notes") {
+      setDesktopView(view);
+    }
   });
 }
 desktopMedia.addEventListener("change", () => {
   if (desktopMedia.matches) {
     setDesktopView(state.desktopView || (state.jobs.length ? "chat" : "upload"));
-  } else {
+  } else if (state.desktopView !== "notes") {
     document.body.classList.remove("desktop-view-chat", "desktop-view-jobs", "desktop-view-upload", "show-upload");
     elements.newMeeting.textContent = "新建会议";
   }

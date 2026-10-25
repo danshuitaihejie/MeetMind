@@ -196,21 +196,24 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 .chat-note-marker { display: inline; padding: 0 1px; border: 0; border-bottom: 2px solid var(--accent); border-radius: 0; background: #ffdd9d; color: #41250d; font: inherit; font-weight: 700; line-height: inherit; cursor: pointer; white-space: pre-wrap; }
 .chat-note-marker:hover { background: #ffd077; }
 .chat-selection-action { position: fixed; z-index: 30; padding: 9px 12px; border: 1px solid var(--accent-dark); background: var(--accent); color: white; box-shadow: var(--shadow); font-size: 11px; font-weight: 700; cursor: pointer; }
-.chat-notes-panel { position: fixed; z-index: 25; top: 0; right: 0; width: min(470px, 100vw); height: 100dvh; padding: 25px; display: flex; flex-direction: column; overflow: hidden; background: var(--white); border-left: 1px solid var(--line); box-shadow: -18px 0 60px rgb(32 28 20 / 18%); }
-.chat-notes-heading { display: flex; align-items: start; justify-content: space-between; gap: 15px; }
+.chat-notes-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--white); border: 1px solid var(--line); }
+.chat-notes-heading { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 15px 20px; border-bottom: 1px solid var(--line); }
 .chat-notes-heading h2 { margin: 5px 0 0; font: 400 27px Georgia, "Songti SC", serif; }
-.chat-notes-close { width: 36px; height: 36px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 24px; line-height: 1; cursor: pointer; }
+.chat-notes-close { min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 11px; cursor: pointer; }
+.chat-notes-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+.chat-notes-sidebar { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 16px; border-right: 1px solid var(--line); }
+.chat-notes-workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 20px 24px 0; overflow: hidden; }
 .chat-notes-intro, .chat-notes-status { color: var(--muted); font-size: 11px; line-height: 1.65; }
-.chat-notes-intro { margin: 17px 0; }
+.chat-notes-intro { flex: none; margin: 0 0 14px; }
 .chat-notes-panel.has-active-note .chat-notes-intro { display: none; }
-.chat-notes-status { margin: 0 0 10px; }
-.chat-notes-list { flex: none; display: flex; gap: 7px; min-height: 0; overflow-x: auto; overflow-y: hidden; padding: 0 0 12px; border-bottom: 1px solid var(--line); }
-.chat-notes-item { flex: 0 0 170px; min-width: 0; min-height: 53px; padding: 9px; border: 1px solid var(--line); background: #f8f5ee; color: var(--ink); text-align: left; cursor: pointer; }
+.chat-notes-status { flex: none; margin: 0 0 10px; }
+.chat-notes-list { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; overscroll-behavior: contain; padding: 0 5px 12px 0; }
+.chat-notes-item { flex: none; min-width: 0; min-height: 53px; padding: 10px; border: 1px solid var(--line); background: #f8f5ee; color: var(--ink); text-align: left; cursor: pointer; }
 .chat-notes-item.active { border-color: var(--accent); background: #fff3e9; }
 .chat-notes-item strong, .chat-notes-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-notes-item strong { font-size: 11px; }
 .chat-notes-item span { margin-top: 7px; color: var(--muted); font-size: 10px; }
-.chat-note-detail { min-height: 0; flex: 1; padding: 19px 6px 12px 0; overflow-y: auto; overscroll-behavior: contain; }
+.chat-note-detail { min-height: 0; flex: 1; padding: 8px 8px 12px 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-note-detail h3 { margin: 0; font: 400 23px Georgia, "Songti SC", serif; overflow-wrap: anywhere; }
 .chat-note-pronunciation { display: flex; align-items: center; gap: 10px; margin-top: 8px; color: var(--muted); font: 13px ui-monospace, monospace; }
 .chat-note-pronunciation button { width: 32px; height: 30px; border: 1px solid var(--line); background: var(--white); cursor: pointer; }
@@ -222,7 +225,7 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 .chat-note-exchange p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
 .chat-note-exchange .chat-note-exchange-question { margin-bottom: 8px; color: var(--accent-dark); font-weight: 700; }
 .chat-note-sources { margin: 3px 0; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
-.chat-note-form { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 12px -25px -25px; padding: 13px 25px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--white); box-shadow: 0 -10px 24px rgb(32 28 20 / 6%); }
+.chat-note-form { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 12px -24px 0; padding: 13px 24px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--white); }
 .chat-note-form label { grid-column: 1 / -1; font-size: 11px; font-weight: 700; }
 .chat-note-form textarea { grid-column: 1; min-width: 0; min-height: 68px; padding: 11px; border: 1px solid var(--line); background: var(--white); color: var(--ink); resize: none; font-size: 12px; line-height: 1.6; }
 .chat-note-form button { grid-column: 2; align-self: stretch; padding: 10px 17px; border: 0; background: var(--accent); color: white; font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -411,6 +414,17 @@ footer span { color: var(--ink); font-weight: 800; } footer p { margin: 0; }
 .hidden { display: none !important; }
 .desktop-meeting-sidebar { display: none; }
 
+/* The annotations workspace is a first-class view, not a floating drawer. */
+body.desktop-view-notes { height: 100dvh; overflow: hidden; }
+body.desktop-view-notes main { width: 100%; max-width: none; height: calc(100dvh - 76px); min-height: 0; margin: 0; padding: 12px 16px; overflow: hidden; }
+body.desktop-view-notes .hero,
+body.desktop-view-notes .workspace,
+body.desktop-view-notes .chat-section,
+body.desktop-view-notes .jobs-section,
+body.desktop-view-notes .desktop-meeting-sidebar,
+body.desktop-view-notes footer { display: none; }
+body.desktop-view-notes .chat-notes-panel { height: 100%; }
+
 /* Desktop workbench: keep the document fixed to the viewport and scroll only
    the active work area (plus the meeting picker on the left). */
 @media (min-width: 1100px) {
@@ -425,6 +439,8 @@ footer span { color: var(--ink); font-weight: 800; } footer p { margin: 0; }
   body.desktop-view-jobs main {
     display: grid; grid-template-columns: 250px minmax(0, 1fr); align-items: stretch; gap: 24px;
   }
+  body.desktop-view-notes main { display: flex; height: calc(100dvh - 64px); padding: 16px 28px 22px; }
+  body.desktop-view-notes .chat-notes-panel { width: 100%; }
   body.desktop-view-jobs .desktop-meeting-sidebar {
     min-width: 0; min-height: 0; display: flex; flex-direction: column;
     padding: 16px; border: 1px solid var(--line); background: var(--white);
@@ -473,14 +489,14 @@ footer span { color: var(--ink); font-weight: 800; } footer p { margin: 0; }
   body.desktop-view-chat .chat-form { flex: none; margin-top: 12px; }
   body.desktop-view-chat .chat-compose-wrap,
   body.desktop-view-chat .chat-compose { flex: none; }
-  body.desktop-view-chat.chat-notes-open .chat-section { padding-right: clamp(520px, 40vw, 640px); }
-  body.desktop-view-chat.chat-notes-open .chat-panel { grid-template-columns: minmax(0, 1fr); }
-  body.desktop-view-chat.chat-notes-open .chat-history { display: none; }
-  body.desktop-view-chat .chat-notes-panel {
-    top: 64px; width: clamp(520px, 40vw, 640px); height: calc(100dvh - 64px);
-    padding: 24px 28px 28px;
-  }
-  body.desktop-view-chat .chat-note-form { margin-right: -28px; margin-bottom: -28px; margin-left: -28px; padding-right: 28px; padding-left: 28px; }
+
+  body.desktop-view-notes .chat-notes-layout { grid-template-columns: 260px minmax(0, 1fr); }
+  body.desktop-view-notes .chat-notes-sidebar { padding: 20px 16px; }
+  body.desktop-view-notes .chat-notes-workspace { padding: 24px 32px 0; }
+  body.desktop-view-notes .chat-note-detail { padding: 10px 14px 18px 0; }
+  body.desktop-view-notes .chat-note-detail h3 { font-size: 30px; }
+  body.desktop-view-notes .chat-note-excerpt { max-height: none; }
+  body.desktop-view-notes .chat-note-form { margin-right: -32px; margin-left: -32px; padding-right: 32px; padding-left: 32px; }
 
   body.desktop-view-jobs .jobs-section { display: flex; flex-direction: column; }
   body.desktop-view-jobs .jobs-section > .section-heading { flex: none; margin-bottom: 8px; }
@@ -537,7 +553,25 @@ footer span { color: var(--ink); font-weight: 800; } footer p { margin: 0; }
   .chat-session-list { max-height: 210px; }
 }
 
+@media (max-width: 760px) {
+  .topbar-notes-link { display: none; }
+  body.desktop-view-notes main { height: calc(100dvh - 76px); padding: 8px; }
+  body.desktop-view-notes .chat-notes-heading { padding: 10px 12px; }
+  body.desktop-view-notes .chat-notes-heading h2 { font-size: 21px; }
+  body.desktop-view-notes .chat-notes-close { padding: 7px 9px; }
+  body.desktop-view-notes .chat-notes-layout { grid-template-columns: minmax(112px, 34%) minmax(0, 1fr); }
+  body.desktop-view-notes .chat-notes-sidebar { padding: 10px 7px; }
+  body.desktop-view-notes .chat-notes-workspace { padding: 13px 12px 0; }
+  body.desktop-view-notes .chat-note-detail h3 { font-size: 20px; }
+  body.desktop-view-notes .chat-note-form { margin-right: -12px; margin-left: -12px; padding-right: 12px; padding-left: 12px; grid-template-columns: minmax(0, 1fr); }
+  body.desktop-view-notes .chat-note-form label,
+  body.desktop-view-notes .chat-note-form textarea,
+  body.desktop-view-notes .chat-note-form button { grid-column: 1; }
+  body.desktop-view-notes .chat-note-form textarea { min-height: 52px; }
+}
+
 @media (max-width: 560px) {
+  body.desktop-view-notes main { height: calc(100dvh - 64px); }
   .chat-toolbar { align-items: stretch; flex-wrap: wrap; }
   .chat-scope-label { width: 100%; }
   .chat-scope { flex: 1; min-width: 0; }

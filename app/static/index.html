@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261025-12" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261025-13" />
   </head>
   <body class="desktop-view-upload">
     <header class="topbar">
@@ -17,6 +17,7 @@
       <div class="topbar-actions">
         <button class="topbar-link hidden" id="newMeetingToggle" type="button">新建会议</button>
         <a class="topbar-link" href="#chatSection" data-desktop-view="chat">问会议</a>
+        <a class="topbar-link topbar-notes-link" href="#chatNotesPanel" data-desktop-view="notes">标注笔记</a>
         <a class="topbar-link" href="#jobsSection" data-desktop-view="jobs">处理记录</a>
         <div class="system-status" id="systemStatus">
           <span class="status-dot"></span>
@@ -183,28 +184,34 @@
       </section>
 
       <button class="chat-selection-action hidden" id="chatSelectionAction" type="button" aria-keyshortcuts="Control+Enter" title="解释并标记所选词语（Ctrl+Enter）">解释并标记</button>
-      <aside class="chat-notes-panel hidden" id="chatNotesPanel" role="dialog" aria-modal="false" aria-labelledby="chatNotesTitle">
+      <section class="chat-notes-panel hidden" id="chatNotesPanel" aria-labelledby="chatNotesTitle">
         <div class="chat-notes-heading">
           <div><p class="kicker">ANNOTATIONS</p><h2 id="chatNotesTitle">标注笔记</h2></div>
-          <button class="chat-notes-close" id="chatNotesClose" type="button" aria-label="关闭标注笔记">×</button>
+          <button class="chat-notes-close" id="chatNotesClose" type="button">← 返回问会议</button>
         </div>
-        <p class="chat-notes-intro">选择对话里的词或短语，可以结合会议内容解释，并在这里继续追问。</p>
-        <p class="chat-notes-status" id="chatNotesStatus" role="status"></p>
-        <div class="chat-notes-list" id="chatNotesList" aria-label="已保存的标注"></div>
-        <section class="chat-note-detail hidden" id="chatNoteDetail" aria-label="标注详情">
-          <h3 id="chatNotePhrase"></h3>
-          <div class="chat-note-pronunciation hidden" id="chatNotePronunciation"><span id="chatNoteIpa"></span><button type="button" id="chatNoteSpeak" aria-label="播放英文发音">🔊</button></div>
-          <p class="chat-note-excerpt" id="chatNoteExcerpt"></p>
-          <div class="chat-note-exchanges" id="chatNoteExchanges"></div>
-          <button class="chat-note-delete" id="chatNoteDelete" type="button">删除标注</button>
-        </section>
-        <p class="chat-notes-error hidden" id="chatNotesError" role="alert"></p>
-        <form class="chat-note-form hidden" id="chatNoteForm">
-          <label for="chatNoteQuestion">继续追问</label>
-          <textarea id="chatNoteQuestion" rows="2" maxlength="2000" placeholder="例如：它在这次会议中具体指什么？"></textarea>
-          <button id="chatNoteAsk" type="submit">提问 →</button>
-        </form>
-      </aside>
+        <div class="chat-notes-layout">
+          <aside class="chat-notes-sidebar" aria-label="标注列表">
+            <p class="chat-notes-status" id="chatNotesStatus" role="status"></p>
+            <nav class="chat-notes-list" id="chatNotesList" aria-label="已保存的标注"></nav>
+          </aside>
+          <div class="chat-notes-workspace">
+            <p class="chat-notes-intro">选择对话里的词或短语，可以结合会议内容解释，并在这里继续追问。</p>
+            <section class="chat-note-detail hidden" id="chatNoteDetail" aria-label="标注详情">
+              <h3 id="chatNotePhrase"></h3>
+              <div class="chat-note-pronunciation hidden" id="chatNotePronunciation"><span id="chatNoteIpa"></span><button type="button" id="chatNoteSpeak" aria-label="播放英文发音">🔊</button></div>
+              <p class="chat-note-excerpt" id="chatNoteExcerpt"></p>
+              <div class="chat-note-exchanges" id="chatNoteExchanges"></div>
+              <button class="chat-note-delete" id="chatNoteDelete" type="button">删除标注</button>
+            </section>
+            <p class="chat-notes-error hidden" id="chatNotesError" role="alert"></p>
+            <form class="chat-note-form hidden" id="chatNoteForm">
+              <label for="chatNoteQuestion">继续追问</label>
+              <textarea id="chatNoteQuestion" rows="2" maxlength="2000" placeholder="例如：它在这次会议中具体指什么？"></textarea>
+              <button id="chatNoteAsk" type="submit">提问 →</button>
+            </form>
+          </div>
+        </div>
+      </section>
 
       <section class="jobs-section" id="jobsSection" aria-labelledby="jobsTitle">
         <div class="section-heading">
@@ -330,6 +337,6 @@
       <p>更少回放，更多推进。</p>
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
-    <script src="/assets/app.js?v=20261025-10" defer></script>
+    <script src="/assets/app.js?v=20261025-13" defer></script>
   </body>
 </html>
