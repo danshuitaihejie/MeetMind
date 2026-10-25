@@ -45,7 +45,7 @@ def _parser() -> JSONArgumentParser:
 
     serve = commands.add_parser("serve", help="启动网页服务")
     serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--port", type=int, default=18473)
     serve.add_argument("--reload", action="store_true", help="代码变化时自动重启")
 
     process = commands.add_parser("process", help="同步处理本地音视频文件")
@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         uvicorn.run(
             "app.main:app",
             host=getattr(args, "host", "127.0.0.1"),
-            port=getattr(args, "port", 8000),
+            port=getattr(args, "port", 18473),
             reload=args.command is None or getattr(args, "reload", False),
         )
         return 0

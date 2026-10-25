@@ -36,10 +36,10 @@ cp .env.example .env
 
 uv sync
 set -a && source .env && set +a
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload --port 18473
 ```
 
-打开 <http://127.0.0.1:8000>。
+打开 <http://127.0.0.1:18473>。
 
 ### 问会议
 
