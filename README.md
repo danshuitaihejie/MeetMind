@@ -6,7 +6,7 @@
 
 ![MeetMind 处理记录、会议纪要与智能校对界面](docs/media/results.webp)
 
-> 以下画面使用虚构会议数据。演示短片是无声的界面状态导览，不包含真实会议内容。
+> 以下画面使用虚构会议数据和默认 MiniMax 示例配置。演示短片是无声的界面状态导览，不包含真实会议内容。
 
 ## 短视频导览
 
@@ -20,7 +20,7 @@
 | 环节 | 特色 |
 | --- | --- |
 | 上传与提速 | 多种音视频格式、删除长静音、保音高加速、压缩时长预估。 |
-| 转写与纪要 | 长音频自动分段，输出完整转写和结构化纪要，失败可重试。 |
+| 转写与纪要 | 语音和文本服务可分别配置兼容 API；长音频自动分段，输出完整转写和结构化纪要，失败可重试。 |
 | 智能校对 | 原速词级时间轴、原声片段、本地视频 OCR、两版 ASR 冲突提醒、人工确认和主动搜索错词。 |
 | 可追溯结果 | 纪要历史版本与逐行差异、原始文件回放、逐次 AI 用量。 |
 | 会议知识 | 跨会议问答、来源片段、原片定位、标注笔记与连续追问。 |
@@ -34,11 +34,11 @@
 - 默认流程只提取视频的第一个音轨，不上传画面。
 - 通过 FFmpeg 删除长静音，并以 1×–2× 保音高加速。
 - 输出 16kHz、单声道、32kbps MP3，显著减少传输体积。
-- 使用 MiniMax `asr-1.0` 转写，使用 MiniMax 文本模型生成中文 Markdown 会议纪要。
-- 压缩音频超过 300 秒时自动分段转写，为 MiniMax ASR 的 500 秒限制留出余量。
+- 默认使用 MiniMax `asr-1.0` 和文本模型；也可分别接入兼容的语音转写与 Chat Completions 服务，模型名称由配置决定。
+- 压缩音频超过 300 秒时自动分段转写；接入服务需接受这些 MP3 片段。
 - 任务状态和结果保存到本地 `data/jobs/`，重启服务后仍可查看。
 - 每个处理记录目录保留上传时的原始音视频 `source.<扩展名>`，供回放核对；压缩音频另存为 `compressed.mp3`。
-- MiniMax 遇到临时 429/5xx 会自动退避重试三次；失败任务可在页面直接重新处理。
+- 模型 API 遇到临时 429/5xx 会自动退避重试三次；失败任务可在页面直接重新处理。
 - 每场会议的“AI 用量”会保存文本模型返回的输入、输出、总 token 和缓存输入，
   并列出转写、纪要、校对、重新生成和重试的逐次调用；记录不会随重试清零。
 - 对结果不满意时可按需启动智能校对：以原速音频取得词级时间戳，用本地 RapidOCR
@@ -67,7 +67,7 @@
 
 ## 本地运行
 
-依赖 Python 3.11+、[uv](https://docs.astral.sh/uv/) 和 FFmpeg。
+依赖 Python 3.11+、[uv](https://docs.astral.sh/uv/) 和 FFmpeg。下面以默认 MiniMax 配置为例；其他兼容服务见[模型接入](#模型接入)。
 
 ```bash
 cp .env.example .env
@@ -134,7 +134,27 @@ Agent 应只提交已核实的纠偏；拿不准的 `item_id` 不写入 `correct
 }
 ```
 
-`--context-file -` 和 `--input -` 可以从标准输入读取背景文字或 JSON。`retry <任务ID>` 可重新处理失败任务；`uv run meetmind serve` 启动网页服务，`--host`、`--port`、`--reload` 可配置服务。运行前仍需配置 `MINIMAX_API_KEY`，以及安装 FFmpeg/FFprobe。
+`--context-file -` 和 `--input -` 可以从标准输入读取背景文字或 JSON。`retry <任务ID>` 可重新处理失败任务；`uv run meetmind serve` 启动网页服务，`--host`、`--port`、`--reload` 可配置服务。运行前需配置语音与文本 API，以及安装 FFmpeg/FFprobe。
+
+## 模型接入
+
+默认的 `MINIMAX_API_KEY` 同时用于 MiniMax 转写和文本模型。也可以只替换其中一种服务，或分别替换两种服务：
+
+```dotenv
+MEETMIND_ASR_API_KEY=your-asr-key
+MEETMIND_ASR_BASE_URL=https://speech.example.com/v1
+MEETMIND_ASR_API_FORMAT=openai
+MEETMIND_TRANSCRIPTION_MODEL=your-asr-model
+
+MEETMIND_TEXT_API_KEY=your-text-key
+MEETMIND_TEXT_BASE_URL=https://chat.example.com/v1
+MEETMIND_TEXT_API_FORMAT=openai
+MEETMIND_SUMMARY_MODEL=your-chat-model
+```
+
+`openai` 模式表示兼容 `POST /v1/audio/transcriptions` 或 `POST /v1/chat/completions` 的请求与响应格式，**不限定服务商**。自定义服务需要同时填写各自的地址和密钥，避免把默认密钥发往其他地址；基础地址可带或不带结尾的 `/v1`。文本接口须返回 `choices[0].message.content`；部分服务若不接受默认的 `max_tokens`，可设 `MEETMIND_TEXT_MAX_TOKENS_FIELD=max_completion_tokens`。
+
+普通转写需要语音接口返回 JSON `text`。智能校对额外要求 `response_format=verbose_json`、`timestamp_granularities[]=word`，并在 `words` 中返回每个词的 `word`、`start`、`end`；只有普通转写能力的模型仍可生成纪要，但无法完成词级校对。不同服务对音频时长、文件大小、token 用量和模型参数的支持可能不同，请选能接收 300 秒 MP3 片段的服务，并按实际接口验证。MiniMax 专用格式仍可用 `minimax`，详见 `.env.example`。
 
 macOS 安装 FFmpeg：
 
@@ -146,18 +166,23 @@ brew install ffmpeg
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `MINIMAX_API_KEY` | 空 | 转写和纪要所需的 MiniMax API 密钥 |
+| `MINIMAX_API_KEY` | 空 | 默认 MiniMax 语音与文本服务共用密钥 |
 | `MEETMIND_MINIMAX_BASE_URL` | `https://api.minimaxi.com` | MiniMax 国内接口地址；国际账号可设为 `https://api.minimax.io` |
-| `MEETMIND_TRANSCRIPTION_MODEL` | `asr-1.0` | MiniMax 语音识别模型 |
-| `MEETMIND_SUMMARY_MODEL` | `MiniMax-M2.7` | MiniMax 会议纪要模型 |
+| `MEETMIND_ASR_API_KEY` / `MEETMIND_ASR_BASE_URL` | 空 | 自定义转写服务的密钥和基础地址，需成对配置 |
+| `MEETMIND_ASR_API_FORMAT` | 自动判断 | 默认 MiniMax，配置自定义语音服务后为 `openai`；也可显式设为 `minimax` |
+| `MEETMIND_TEXT_API_KEY` / `MEETMIND_TEXT_BASE_URL` | 空 | 自定义文本服务的密钥和基础地址，需成对配置 |
+| `MEETMIND_TEXT_API_FORMAT` | 自动判断 | 默认 MiniMax，配置自定义文本服务后为 `openai`；也可显式设为 `minimax` |
+| `MEETMIND_TRANSCRIPTION_MODEL` | `asr-1.0` | 转写模型名称；其他服务需改为其支持的模型 |
+| `MEETMIND_SUMMARY_MODEL` | `MiniMax-M2.7` | 纪要、问答和校对建议共用的文本模型名称 |
+| `MEETMIND_TEXT_MAX_TOKENS_FIELD` | 按格式 | `openai` 默认 `max_tokens`，MiniMax 默认 `max_completion_tokens` |
 | `MEETMIND_DATA_DIR` | `./data` | 上传文件和结果目录 |
 | `MEETMIND_MAX_UPLOAD_MB` | `2048` | 单个源文件上限 |
 
-MiniMax ASR 单个音频文件限制为 50MB、500 秒。MeetMind 会先把音轨压缩成 32kbps MP3，再自动切成不超过 300 秒的片段依次转写，因此可直接处理 30 分钟或更长会议。
+默认 MiniMax ASR 的单文件限制是 50MB、500 秒。MeetMind 会先把音轨压缩成 32kbps MP3，再切成不超过 300 秒的片段依次转写；其他服务按其自身限制核对。
 
-MiniMax ASR 会提供词级时间戳和说话人，但不提供原生置信度。页面中的校对置信度是文本模型根据原速转写、上下文和 OCR 证据给出的估值，并会明确提示人工确认。
+默认 MiniMax ASR 会提供词级时间戳和说话人，但不提供原生置信度。其他服务的字段与能力以实际响应为准。页面中的校对置信度是文本模型根据原速转写、上下文和 OCR 证据给出的估值，并会明确提示人工确认。
 
-文本 token 按 MiniMax API 返回的 `usage` 统计，缓存输入已经包含在输入 token 中，
+文本 token 按模型 API 返回的 `usage` 统计，缓存输入已包含在输入 token 中，
 不会重复相加。ASR 不返回文本 token，单独累计成功响应报告的音频秒数。
 没有返回的用量以及失败请求的未知消耗会明确标注；历史任务无法补算，模拟调用不算真实消耗。
 这些用量保存在任务的 `job.json`，服务重启后仍可查看。Token 总量与 Token Plan/M Plan
@@ -179,9 +204,9 @@ uv run ruff check .
     ↓ FFmpeg 提取第一个音轨
 删除长静音 → 保音高加速 → 16kHz 单声道 MP3
     ↓
-MiniMax ASR（长音频自动分段）
+配置的 ASR 服务（长音频自动分段）
     ↓
-MiniMax 文本模型整理：摘要 / 关键结论 / 讨论要点 / 行动项 / 待确认事项
+配置的文本模型整理：摘要 / 关键结论 / 讨论要点 / 行动项 / 待确认事项
     ↓ 可选：用户点击“智能校对”
 原速词级时间轴 + 本地视频 OCR → 仅确认疑似词/短语 → 重新生成纪要
 ```
@@ -190,5 +215,5 @@ MiniMax 文本模型整理：摘要 / 关键结论 / 讨论要点 / 行动项 / 
 
 - 原始文件、压缩音频、转写和纪要都会保存在运行机器的 `data/jobs/<任务ID>/`。
 - 默认流程只有压缩后的音频会发送给转写 API；会议文本会发送给纪要模型。
-- 智能校对按需启动，届时原速音频会发送给 MiniMax 以获得准确时间戳；视频帧仅在本地由 RapidOCR 识别，不会上传。
+- 智能校对按需启动，届时原速音频会发送给所配置的语音服务以获得时间戳；视频帧仅在本地由 RapidOCR 识别，不会上传。
 - 当前是适合单机试用的版本。正式多用户部署前，应补充登录、访问控制、自动清理、对象存储和任务队列。

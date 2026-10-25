@@ -75,12 +75,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         ffmpeg_available = media.available()
-        ai_configured = bool(app_settings.minimax_api_key or app_settings.mock_ai)
+        ai_configured = app_settings.ai_configured
         return HealthResponse(
             ok=ffmpeg_available,
             ffmpeg_available=ffmpeg_available,
             ai_configured=ai_configured,
-            ai_provider="MiniMax",
+            ai_provider=app_settings.ai_provider_label,
             transcription_model=app_settings.transcription_model,
             summary_model=app_settings.summary_model,
         )

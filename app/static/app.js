@@ -138,7 +138,7 @@ async function checkHealth() {
     elements.systemStatus.className = `system-status ${health.ok ? (health.ai_configured ? "ready" : "warning") : "error"}`;
     $("span:last-child", elements.systemStatus).textContent = !health.ffmpeg_available
       ? "FFmpeg 未就绪"
-      : health.ai_configured ? "MiniMax 已就绪" : "待配置 MiniMax 密钥";
+      : health.ai_configured ? `${health.ai_provider} 已就绪` : "待配置语音与文本 API";
   } catch {
     elements.systemStatus.className = "system-status error";
     $("span:last-child", elements.systemStatus).textContent = "服务不可用";

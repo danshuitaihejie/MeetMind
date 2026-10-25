@@ -144,8 +144,8 @@ def _process(args: argparse.Namespace, settings: Settings, store: JobStore) -> J
         raise CLIError(f"会议背景不能超过 {MAX_CONTEXT_CHARS} 个字符")
     if not MediaProcessor.available():
         raise CLIError("未安装 FFmpeg/FFprobe")
-    if not (settings.minimax_api_key or settings.mock_ai):
-        raise CLIError("未配置 MINIMAX_API_KEY")
+    if not settings.ai_configured:
+        raise CLIError("语音和文本 API 未配置完整；请检查地址、密钥和格式")
 
     job_id = uuid.uuid4().hex
     directory = store.job_dir(job_id)
@@ -174,8 +174,8 @@ def _retry(job_id: str, settings: Settings, store: JobStore) -> Job:
     source = _source_path(store, job_id)
     if not MediaProcessor.available():
         raise CLIError("未安装 FFmpeg/FFprobe")
-    if not (settings.minimax_api_key or settings.mock_ai):
-        raise CLIError("未配置 MINIMAX_API_KEY")
+    if not settings.ai_configured:
+        raise CLIError("语音和文本 API 未配置完整；请检查地址、密钥和格式")
     for name in ("transcript.txt", "minutes.md"):
         (store.job_dir(job_id) / name).unlink(missing_ok=True)
     store.update(

@@ -363,6 +363,6 @@ class HealthResponse(BaseModel):
     ok: bool
     ffmpeg_available: bool
     ai_configured: bool
-    ai_provider: str = "MiniMax"
+    ai_provider: str = "语音 / 文本 API"
     transcription_model: str
     summary_model: str

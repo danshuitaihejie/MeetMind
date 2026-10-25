@@ -43,7 +43,7 @@ def process_job(
 
         store.update(
             job_id,
-            stage="准备 MiniMax 转写",
+            stage="准备语音转写",
             progress=52,
             compressed_duration_seconds=round(compressed_duration, 2),
             compressed_size_bytes=compressed_size,
@@ -58,7 +58,7 @@ def process_job(
             progress = 52 + round(index / len(chunks) * 28)
             store.update(
                 job_id,
-                stage=f"MiniMax 转写 {index}/{len(chunks)}",
+                stage=f"语音转写 {index}/{len(chunks)}",
                 progress=progress,
             )
             transcript_parts.append(ai.transcribe(chunk, job.context))
@@ -71,7 +71,7 @@ def process_job(
             )
         (store.job_dir(job_id) / "transcript.txt").write_text(transcript, encoding="utf-8")
 
-        store.update(job_id, stage="MiniMax 整理会议纪要", progress=84, transcript=transcript)
+        store.update(job_id, stage="整理会议纪要", progress=84, transcript=transcript)
         minutes = ai.summarize(transcript, job.context)
         store.save_minutes(job_id, minutes)
 

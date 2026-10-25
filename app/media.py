@@ -132,7 +132,7 @@ class MediaProcessor:
         duration_seconds: float,
         segment_seconds: float = 300,
     ) -> list[Path]:
-        """Split MP3 below MiniMax's 500-second ASR limit, with safety headroom."""
+        """Split MP3 into short chunks for ASR services with per-file limits."""
         if duration_seconds <= segment_seconds:
             return [input_path]
         if segment_seconds <= 0 or segment_seconds >= 500:
