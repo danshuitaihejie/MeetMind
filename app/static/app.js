@@ -10,10 +10,17 @@ const state = {
   selectedMinutesVersions: new Map(),
   comparingJobIds: new Set(),
   jobsInitialized: false,
-  chatConversations: new Map(),
+  chatSessions: [],
+  activeChatSessionId: null,
+  chatHistorySignature: "",
   selectedChatJobIds: null,
   chatScopeJobsSignature: "",
   chatLoading: false,
+  chatNotes: [],
+  chatNotesLoading: false,
+  chatNoteBusy: false,
+  activeChatNoteId: null,
+  chatSelection: null,
 };
 
 const elements = {
@@ -42,6 +49,10 @@ const elements = {
   template: $("#jobTemplate"),
   chatSection: $("#chatSection"),
   chatScope: $("#chatScope"),
+  chatSessionList: $("#chatSessionList"),
+  chatNew: $("#chatNew"),
+  chatRename: $("#chatRename"),
+  chatDelete: $("#chatDelete"),
   chatScopeSummary: $("#chatScopeSummary"),
   chatScopeOptions: $("#chatScopeOptions"),
   chatSelectAll: $("#chatSelectAll"),
@@ -51,8 +62,26 @@ const elements = {
   chatForm: $("#chatForm"),
   chatQuestion: $("#chatQuestion"),
   chatSend: $("#chatSend"),
-  chatClear: $("#chatClear"),
   chatError: $("#chatError"),
+  chatNotesToggle: $("#chatNotesToggle"),
+  chatNotesCount: $("#chatNotesCount"),
+  chatNotesPanel: $("#chatNotesPanel"),
+  chatNotesClose: $("#chatNotesClose"),
+  chatNotesStatus: $("#chatNotesStatus"),
+  chatNotesList: $("#chatNotesList"),
+  chatNoteDetail: $("#chatNoteDetail"),
+  chatNotePhrase: $("#chatNotePhrase"),
+  chatNoteDelete: $("#chatNoteDelete"),
+  chatNotePronunciation: $("#chatNotePronunciation"),
+  chatNoteIpa: $("#chatNoteIpa"),
+  chatNoteSpeak: $("#chatNoteSpeak"),
+  chatNoteExcerpt: $("#chatNoteExcerpt"),
+  chatNoteExchanges: $("#chatNoteExchanges"),
+  chatNoteForm: $("#chatNoteForm"),
+  chatNoteQuestion: $("#chatNoteQuestion"),
+  chatNoteAsk: $("#chatNoteAsk"),
+  chatNotesError: $("#chatNotesError"),
+  chatSelectionAction: $("#chatSelectionAction"),
 };
 
 function formatBytes(bytes) {
@@ -205,6 +234,8 @@ const usageOperationLabels = {
   review_detection: "校对词语检测",
   review_refinement: "校对结果细化",
   chat: "会议问答",
+  chat_title: "对话标题生成",
+  chat_note: "词语标注释义",
 };
 
 const usageStatusLabels = {
@@ -450,6 +481,7 @@ async function requestJSON(url, options = {}) {
     catch { /* Use the generic message. */ }
     throw new Error(message);
   }
+  if (response.status === 204) return null;
   return response.json();
 }
 
@@ -470,6 +502,7 @@ function meetingTitle(job) {
 function openMeetingChat(jobId) {
   if (state.chatLoading) return;
   state.selectedChatJobIds = new Set([jobId]);
+  clearMismatchedChatSession();
   setChatError();
   renderChatScope();
   elements.chatSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -489,6 +522,13 @@ function selectedChatIds(jobs = availableChatJobs()) {
 
 function chatScopeKey(jobs = availableChatJobs()) {
   return JSON.stringify(selectedChatIds(jobs).sort());
+}
+
+function clearMismatchedChatSession() {
+  const session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
+  if (session && JSON.stringify([...session.scope_job_ids].sort()) !== chatScopeKey()) {
+    state.activeChatSessionId = null;
+  }
 }
 
 function renderChatScope() {
@@ -516,6 +556,7 @@ function renderChatScope() {
     }
   }
   const ids = selectedChatIds(jobs);
+  renderChatSessions();
   elements.chatScopeSummary.textContent = `已选 ${ids.length} / ${jobs.length} 场会议`;
   elements.chatScopeOptions.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.checked = ids.includes(checkbox.value);
@@ -525,7 +566,6 @@ function renderChatScope() {
   elements.chatSelectNone.disabled = state.chatLoading || ids.length === 0;
   elements.chatQuestion.disabled = state.chatLoading || ids.length === 0;
   elements.chatSend.disabled = state.chatLoading || ids.length === 0;
-  elements.chatClear.disabled = state.chatLoading || !state.chatConversations.get(chatScopeKey(jobs))?.length;
   elements.chatSend.textContent = state.chatLoading ? "查找中…" : "发送 →";
   elements.chatHint.textContent = !jobs.length
     ? "会议完成纪要和转写后，就可以在这里提问。"
@@ -535,10 +575,131 @@ function renderChatScope() {
   renderChatMessages();
 }
 
+function renderChatSessions() {
+  const list = elements.chatSessionList;
+  const orderedSessions = [...state.chatSessions].sort((left, right) => (
+    new Date(right.updated_at || right.created_at) - new Date(left.updated_at || left.created_at)
+  ));
+  const signature = JSON.stringify([
+    state.activeChatSessionId, state.chatLoading,
+    orderedSessions.map((session) => [
+      session.id, session.title, session.updated_at, session.scope_job_ids?.length,
+      session.title_is_manual,
+      session.title_generated_by_ai,
+      session.messages?.find((message) => message.role === "user")?.content,
+    ]),
+  ]);
+  if (signature === state.chatHistorySignature) return;
+  state.chatHistorySignature = signature;
+  const scrollTop = list.scrollTop;
+  list.replaceChildren();
+  const addItem = (id, title, firstQuestion, meta, active, titleSource = "") => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `chat-session-item${active ? " active" : ""}`;
+    button.setAttribute("aria-current", active ? "true" : "false");
+    button.disabled = state.chatLoading;
+    const titleRow = document.createElement("span");
+    titleRow.className = "chat-session-title-row";
+    const name = document.createElement("strong");
+    name.textContent = title;
+    name.title = title;
+    titleRow.append(name);
+    if (titleSource) {
+      const source = document.createElement("span");
+      source.className = "chat-session-title-source";
+      source.textContent = titleSource;
+      titleRow.append(source);
+    }
+    const question = document.createElement("span");
+    question.className = "chat-session-question";
+    question.textContent = firstQuestion || "暂无提问";
+    question.title = firstQuestion || "暂无提问";
+    const details = document.createElement("span");
+    details.className = "chat-session-meta";
+    details.textContent = meta;
+    button.setAttribute("aria-label", `${title}${titleSource ? `，${titleSource}` : ""}。${firstQuestion || "暂无提问"}。${meta}`);
+    button.append(titleRow, question, details);
+    button.addEventListener("click", () => {
+      if (!id) {
+        state.activeChatSessionId = null;
+        elements.chatQuestion.value = "";
+        setChatError();
+      } else {
+        const session = state.chatSessions.find((item) => item.id === id);
+        if (!session) return;
+        state.activeChatSessionId = session.id;
+        state.selectedChatJobIds = new Set(session.scope_job_ids || []);
+      }
+      renderChatScope();
+    });
+    list.appendChild(button);
+  };
+  addItem(null, "新对话", "尚未提问", "尚未保存", !state.activeChatSessionId);
+  for (const session of orderedSessions) {
+    const count = (session.scope_job_ids || []).length;
+    const timestamp = session.updated_at || session.created_at;
+    const date = timestamp ? new Date(timestamp) : null;
+    const time = date && !Number.isNaN(date.getTime())
+      ? `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+      : "";
+    const firstQuestion = session.messages?.find((message) => message.role === "user")?.content || "";
+    const titleSource = session.title_is_manual
+      ? "自定义" : session.title_generated_by_ai ? "AI 生成" : "";
+    addItem(session.id, session.title || "新对话", firstQuestion,
+      `${count} 场会议${time ? ` · ${time}` : ""}`,
+      state.activeChatSessionId === session.id, titleSource);
+  }
+  list.scrollTop = scrollTop;
+  elements.chatNew.disabled = state.chatLoading;
+  elements.chatRename.disabled = state.chatLoading || !state.activeChatSessionId;
+  elements.chatDelete.disabled = state.chatLoading || !state.activeChatSessionId;
+}
+
+async function loadChatSessions() {
+  try {
+    const sessions = await requestJSON("/api/chat/sessions");
+    state.chatSessions = Array.isArray(sessions) ? sessions : [];
+    for (const session of state.chatSessions) session.messages ||= [];
+    if (!state.activeChatSessionId && state.chatSessions.length) {
+      state.activeChatSessionId = state.chatSessions[0].id;
+      state.selectedChatJobIds = new Set(state.chatSessions[0].scope_job_ids || []);
+    }
+    renderChatScope();
+  } catch (error) { setChatError(error.message || "无法加载已保存对话"); }
+}
+
+function renderAnnotatedMessageBody(body, message) {
+  const content = message.content;
+  const notes = state.chatNotes.filter((note) => (
+    note.message_id === message.id
+    && Number.isInteger(note.selection_start)
+    && Number.isInteger(note.selection_end)
+    && note.selection_start >= 0
+    && note.selection_end <= content.length
+    && note.selection_end > note.selection_start
+    && content.slice(note.selection_start, note.selection_end) === note.phrase
+  )).sort((a, b) => a.selection_start - b.selection_start || b.selection_end - a.selection_end);
+  let position = 0;
+  for (const note of notes) {
+    if (note.selection_start < position) continue;
+    body.appendChild(document.createTextNode(content.slice(position, note.selection_start)));
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "chat-note-marker";
+    marker.textContent = note.phrase;
+    marker.title = `打开「${note.phrase}」的标注笔记`;
+    marker.setAttribute("aria-label", marker.title);
+    marker.addEventListener("click", () => openChatNotes(note.id));
+    body.appendChild(marker);
+    position = note.selection_end;
+  }
+  body.appendChild(document.createTextNode(content.slice(position)));
+}
+
 function renderChatMessages() {
   const ids = selectedChatIds();
-  const scope = chatScopeKey();
-  const messages = state.chatConversations.get(scope) || [];
+  const messages = state.chatSessions.find((session) => session.id === state.activeChatSessionId)?.messages || [];
   elements.chatMessages.replaceChildren();
   if (!messages.length && !state.chatLoading) {
     const empty = document.createElement("p");
@@ -558,7 +719,8 @@ function renderChatMessages() {
     label.textContent = message.role === "user" ? "你" : "MeetMind";
     const body = document.createElement("div");
     body.className = "chat-message-body";
-    body.textContent = message.content;
+    body.dataset.messageId = message.id;
+    renderAnnotatedMessageBody(body, message);
     article.append(label, body);
     if (message.role === "assistant" && message.retrieved) {
       const note = document.createElement("p");
@@ -614,38 +776,241 @@ async function submitChat(event) {
     elements.chatQuestion.focus();
     return;
   }
-  const scope = chatScopeKey();
-  const messages = state.chatConversations.get(scope) || [];
-  const history = messages.slice(-10).map(({ role, content }) => ({ role, content: content.slice(0, 4000) }));
-  messages.push({ role: "user", content: question });
-  state.chatConversations.set(scope, messages);
   state.chatLoading = true;
   setChatError();
   elements.chatQuestion.value = "";
   renderChatScope();
   try {
-    const response = await requestJSON("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, job_ids: state.selectedChatJobIds === null ? null : ids, history }),
-    });
-    if (typeof response.answer !== "string" || !response.answer.trim()) {
-      throw new Error("服务没有返回回答，请稍后重试");
+    let session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
+    if (session && JSON.stringify([...(session.scope_job_ids || [])].sort()) !== JSON.stringify([...ids].sort())) session = null;
+    if (!session) {
+      session = await requestJSON("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope_job_ids: ids }) });
+      state.chatSessions.unshift(session);
+      state.activeChatSessionId = session.id;
     }
-    messages.push({
-      role: "assistant",
-      content: response.answer,
-      sources: Array.isArray(response.sources) ? response.sources : [],
-      retrieved: Boolean(response.retrieved),
+    const updated = await requestJSON(`/api/chat/sessions/${encodeURIComponent(session.id)}/messages`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }),
     });
+    state.chatSessions = state.chatSessions.map((item) => item.id === updated.id ? updated : item);
   } catch (error) {
-    messages.pop();
     elements.chatQuestion.value = question;
     setChatError(error.message || "提问失败，请稍后重试");
   } finally {
     state.chatLoading = false;
     renderChatScope();
     if (elements.chatQuestion.value) elements.chatQuestion.focus();
+  }
+}
+
+function setChatNotesError(message = "") {
+  elements.chatNotesError.textContent = message;
+  elements.chatNotesError.classList.toggle("hidden", !message);
+}
+
+function clearChatSelection() {
+  state.chatSelection = null;
+  elements.chatSelectionAction.classList.add("hidden");
+}
+
+function updateChatSelection() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount !== 1 || selection.isCollapsed) {
+    clearChatSelection();
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer : range.startContainer.parentElement;
+  const body = startElement?.closest(".chat-message-body");
+  if (!body || !body.contains(range.endContainer) || !elements.chatMessages.contains(body)) {
+    clearChatSelection();
+    return;
+  }
+  const before = range.cloneRange();
+  before.selectNodeContents(body);
+  before.setEnd(range.startContainer, range.startOffset);
+  const raw = range.toString();
+  const phrase = raw.trim();
+  const start = before.toString().length + raw.length - raw.trimStart().length;
+  const end = start + phrase.length;
+  const messages = state.chatSessions.find((session) => session.id === state.activeChatSessionId)?.messages || [];
+  const message = messages.find((item) => item.id === body.dataset.messageId);
+  if (!message || !phrase || phrase.length > 100 || message.content.slice(start, end) !== phrase) {
+    clearChatSelection();
+    return;
+  }
+  let excerptStart = Math.max(0, start - Math.floor((500 - phrase.length) / 2));
+  const excerptEnd = Math.min(message.content.length, excerptStart + 500);
+  excerptStart = Math.max(0, excerptEnd - 500);
+  state.chatSelection = {
+    phrase,
+    message_id: message.id,
+    selection_start: start,
+    selection_end: end,
+    source_excerpt: message.content.slice(excerptStart, excerptEnd),
+    scope_job_ids: [...selectedChatIds()],
+  };
+  const rect = range.getBoundingClientRect();
+  const action = elements.chatSelectionAction;
+  action.classList.remove("hidden");
+  const width = action.offsetWidth;
+  action.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;
+  action.style.top = `${Math.max(8, Math.min(window.innerHeight - action.offsetHeight - 8, rect.bottom + 8))}px`;
+}
+
+function renderChatNotes() {
+  elements.chatNotesCount.textContent = state.chatNotes.length ? `(${state.chatNotes.length})` : "";
+  elements.chatNotesList.replaceChildren();
+  if (state.chatNotesLoading) {
+    elements.chatNotesStatus.textContent = "正在加载标注笔记…";
+  } else if (!state.chatNotes.length) {
+    elements.chatNotesStatus.textContent = "暂无标注。选中对话中的词或短语即可开始。";
+  } else {
+    elements.chatNotesStatus.textContent = `已保存 ${state.chatNotes.length} 条标注`;
+  }
+  for (const note of state.chatNotes) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chat-notes-item";
+    button.classList.toggle("active", note.id === state.activeChatNoteId);
+    button.setAttribute("aria-pressed", String(note.id === state.activeChatNoteId));
+    const phrase = document.createElement("strong");
+    phrase.textContent = note.phrase;
+    const summary = document.createElement("span");
+    summary.textContent = note.exchanges?.at(-1)?.answer?.slice(0, 100) || "等待解释";
+    button.append(phrase, summary);
+    button.addEventListener("click", () => openChatNotes(note.id));
+    elements.chatNotesList.appendChild(button);
+  }
+  const active = state.chatNotes.find((note) => note.id === state.activeChatNoteId);
+  elements.chatNoteDetail.classList.toggle("hidden", !active);
+  if (!active) return;
+  elements.chatNotePhrase.textContent = active.phrase;
+  const pronunciation = active.pronunciation;
+  const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  const isEnglishWord = /^[A-Za-z]+(?:['’-][A-Za-z]+)?$/.test(active.phrase.trim());
+  elements.chatNotePronunciation.classList.toggle("hidden", !isEnglishWord);
+  elements.chatNoteIpa.textContent = pronunciation?.ipa ? `${pronunciation.ipa}${pronunciation.language ? ` · ${pronunciation.language}` : ""}` : (isEnglishWord ? "音标暂不可用" : "");
+  elements.chatNoteSpeak.disabled = !canSpeak;
+  elements.chatNoteSpeak.title = canSpeak ? "播放英文发音" : "此浏览器不支持语音合成";
+  elements.chatNoteExcerpt.textContent = active.source_excerpt ? `原文：${active.source_excerpt}` : "";
+  elements.chatNoteExchanges.replaceChildren();
+  for (const exchange of active.exchanges || []) {
+    const block = document.createElement("div");
+    block.className = "chat-note-exchange";
+    if (exchange.question) {
+      const question = document.createElement("p");
+      question.className = "chat-note-exchange-question";
+      question.textContent = exchange.question;
+      block.appendChild(question);
+    }
+    const answer = document.createElement("p");
+    answer.textContent = exchange.answer || "暂无解释";
+    block.appendChild(answer);
+    elements.chatNoteExchanges.appendChild(block);
+  }
+  if (!active.exchanges?.length) {
+    const empty = document.createElement("p");
+    empty.className = "chat-notes-status";
+    empty.textContent = "暂无解释，可以在下方提问。";
+    elements.chatNoteExchanges.appendChild(empty);
+  }
+  if (active.sources?.length) {
+    const sources = document.createElement("p");
+    sources.className = "chat-note-sources";
+    sources.textContent = `参考会议：${active.sources.map((source) => source.filename).join("、")}`;
+    elements.chatNoteExchanges.appendChild(sources);
+  }
+  elements.chatNoteAsk.disabled = state.chatNoteBusy;
+  elements.chatNoteQuestion.disabled = state.chatNoteBusy;
+  elements.chatNoteAsk.textContent = state.chatNoteBusy ? "解释中…" : "提问 →";
+}
+
+function openChatNotes(noteId = null) {
+  if (noteId) state.activeChatNoteId = noteId;
+  elements.chatNotesPanel.classList.remove("hidden");
+  elements.chatNotesToggle.setAttribute("aria-expanded", "true");
+  renderChatNotes();
+  if (noteId) elements.chatNoteQuestion.focus({ preventScroll: true });
+  else elements.chatNotesClose.focus({ preventScroll: true });
+}
+
+function closeChatNotes() {
+  elements.chatNotesPanel.classList.add("hidden");
+  elements.chatNotesToggle.setAttribute("aria-expanded", "false");
+  elements.chatNotesToggle.focus({ preventScroll: true });
+}
+
+async function loadChatNotes() {
+  state.chatNotesLoading = true;
+  renderChatNotes();
+  try {
+    const notes = await requestJSON("/api/chat/notes");
+    state.chatNotes = Array.isArray(notes) ? notes : [];
+    setChatNotesError();
+    renderChatMessages();
+  } catch (error) {
+    setChatNotesError(error.message || "无法加载标注笔记");
+  } finally {
+    state.chatNotesLoading = false;
+    renderChatNotes();
+  }
+}
+
+async function createChatNote() {
+  const selection = state.chatSelection;
+  if (!selection || state.chatNoteBusy) return;
+  clearChatSelection();
+  window.getSelection()?.removeAllRanges();
+  state.activeChatNoteId = null;
+  openChatNotes();
+  state.chatNoteBusy = true;
+  elements.chatNotesStatus.textContent = `正在解释「${selection.phrase}」…`;
+  setChatNotesError();
+  try {
+    const note = await requestJSON("/api/chat/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...selection, session_id: state.activeChatSessionId }),
+    });
+    state.chatNotes = [note, ...state.chatNotes.filter((item) => item.id !== note.id)];
+    state.activeChatNoteId = note.id;
+    renderChatMessages();
+  } catch (error) {
+    setChatNotesError(error.message || "解释失败，请重新选中后重试");
+  } finally {
+    state.chatNoteBusy = false;
+    renderChatNotes();
+  }
+}
+
+async function askChatNote(event) {
+  event.preventDefault();
+  const noteId = state.activeChatNoteId;
+  const question = elements.chatNoteQuestion.value.trim();
+  if (!noteId || state.chatNoteBusy) return;
+  if (!question) {
+    setChatNotesError("请输入追问内容");
+    elements.chatNoteQuestion.focus();
+    return;
+  }
+  state.chatNoteBusy = true;
+  setChatNotesError();
+  renderChatNotes();
+  try {
+    const note = await requestJSON(`/api/chat/notes/${encodeURIComponent(noteId)}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    state.chatNotes = [note, ...state.chatNotes.filter((item) => item.id !== note.id)];
+    elements.chatNoteQuestion.value = "";
+  } catch (error) {
+    setChatNotesError(error.message || "追问失败，请稍后重试");
+  } finally {
+    state.chatNoteBusy = false;
+    renderChatNotes();
+    elements.chatNoteQuestion.focus();
   }
 }
 
@@ -1303,32 +1668,95 @@ elements.chatScopeOptions.addEventListener("change", (event) => {
   if (event.target.checked) state.selectedChatJobIds.add(event.target.value);
   else state.selectedChatJobIds.delete(event.target.value);
   if (selectedChatIds().length === availableChatJobs().length) state.selectedChatJobIds = null;
+  clearMismatchedChatSession();
   setChatError();
   renderChatScope();
 });
 elements.chatSelectAll.addEventListener("click", () => {
   state.selectedChatJobIds = null;
+  clearMismatchedChatSession();
   setChatError();
   renderChatScope();
 });
 elements.chatSelectNone.addEventListener("click", () => {
   state.selectedChatJobIds = new Set();
+  clearMismatchedChatSession();
   setChatError();
   renderChatScope();
 });
 elements.chatForm.addEventListener("submit", submitChat);
+elements.chatNew.addEventListener("click", () => {
+  state.activeChatSessionId = null;
+  elements.chatQuestion.value = "";
+  setChatError();
+  renderChatScope();
+  elements.chatQuestion.focus();
+});
+elements.chatRename.addEventListener("click", async () => {
+  const session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
+  if (!session) return;
+  const title = window.prompt("对话名称", session.title || "新对话");
+  if (!title?.trim()) return;
+  try {
+    const updated = await requestJSON(`/api/chat/sessions/${encodeURIComponent(session.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim() }) });
+    state.chatSessions = state.chatSessions.map((item) => item.id === updated.id ? updated : item);
+    renderChatSessions();
+  } catch (error) { setChatError(error.message || "重命名失败"); }
+});
+elements.chatDelete.addEventListener("click", async () => {
+  const id = state.activeChatSessionId;
+  if (!id || !window.confirm("删除这段已保存对话？此操作无法撤销。")) return;
+  try {
+    await requestJSON(`/api/chat/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.chatSessions = state.chatSessions.filter((item) => item.id !== id);
+    state.activeChatSessionId = null;
+    renderChatScope();
+  } catch (error) { setChatError(error.message || "删除失败"); }
+});
+elements.chatNoteSpeak.addEventListener("click", () => {
+  const note = state.chatNotes.find((item) => item.id === state.activeChatNoteId);
+  if (!note?.phrase || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(note.phrase);
+  utterance.lang = note.pronunciation?.language || "en-US";
+  window.speechSynthesis.speak(utterance);
+});
+elements.chatNoteDelete.addEventListener("click", async () => {
+  const id = state.activeChatNoteId;
+  if (!id || !window.confirm("删除这条标注笔记？此操作无法撤销。")) return;
+  try {
+    await requestJSON(`/api/chat/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
+    state.chatNotes = state.chatNotes.filter((note) => note.id !== id);
+    state.activeChatNoteId = null;
+    renderChatNotes();
+    renderChatMessages();
+  } catch (error) { setChatNotesError(error.message || "删除标注失败"); }
+});
+elements.chatMessages.addEventListener("pointerup", () => window.setTimeout(updateChatSelection, 0));
+elements.chatMessages.addEventListener("keyup", updateChatSelection);
+elements.chatMessages.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && state.chatSelection) {
+    event.preventDefault();
+    createChatNote();
+  }
+});
+document.addEventListener("selectionchange", () => window.setTimeout(updateChatSelection, 0));
+elements.chatSelectionAction.addEventListener("pointerdown", (event) => event.preventDefault());
+elements.chatSelectionAction.addEventListener("click", createChatNote);
+elements.chatNotesToggle.addEventListener("click", () => {
+  if (elements.chatNotesPanel.classList.contains("hidden")) openChatNotes();
+  else closeChatNotes();
+});
+elements.chatNotesClose.addEventListener("click", closeChatNotes);
+elements.chatNotesPanel.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeChatNotes();
+});
+elements.chatNoteForm.addEventListener("submit", askChatNote);
 elements.chatQuestion.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     elements.chatForm.requestSubmit();
   }
-});
-elements.chatClear.addEventListener("click", () => {
-  state.chatConversations.delete(chatScopeKey());
-  elements.chatQuestion.value = "";
-  setChatError();
-  renderChatScope();
-  elements.chatQuestion.focus();
 });
 elements.newMeeting.addEventListener("click", () => {
   const show = !document.body.classList.contains("show-upload");
@@ -1346,6 +1774,8 @@ elements.dropzone.addEventListener("drop", (event) => selectFile(event.dataTrans
 
 checkHealth();
 renderChatScope();
+loadChatSessions();
+loadChatNotes();
 loadJobs().then(() => {
   if (state.jobs.some((job) => (
     ["queued", "processing"].includes(job.status)

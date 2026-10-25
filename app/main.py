@@ -11,11 +11,25 @@ from fastapi.staticfiles import StaticFiles
 
 from app.ai import AIConfigurationError, AIService, MiniMaxAPIError
 from app.chat import available_jobs, build_context
+from app.chat_notes import ChatNoteStore
+from app.chat_sessions import ChatSessionStore
 from app.config import Settings
 from app.media import MediaProcessor
 from app.models import (
+    ChatNote,
+    ChatNoteCreate,
+    ChatNoteExchange,
+    ChatNoteQuestion,
+    ChatPronunciation,
     ChatRequest,
     ChatResponse,
+    ChatSession,
+    ChatSessionCreate,
+    ChatSessionMessage,
+    ChatSessionQuestion,
+    ChatSessionUpdate,
+    ChatSource,
+    ChatTurn,
     HealthResponse,
     Job,
     JobStatus,
@@ -36,6 +50,8 @@ STATIC_DIR = BASE_DIR / "static"
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or Settings.from_env()
     store = JobStore(app_settings.data_dir / "jobs")
+    note_store = ChatNoteStore(app_settings.data_dir / "chat_notes.json")
+    session_store = ChatSessionStore(app_settings.data_dir / "chat_sessions.json")
     media = MediaProcessor()
     ai = AIService(app_settings)
     ocr = OCRService()
@@ -43,6 +59,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="MeetMind", version="0.1.0")
     app.state.settings = app_settings
     app.state.store = store
+    app.state.note_store = note_store
+    app.state.session_store = session_store
     app.state.ocr = ocr
     app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
@@ -67,17 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def list_jobs() -> list[Job]:
         return store.list()
 
-    @app.post("/api/chat", response_model=ChatResponse)
-    def ask_meetings(request: ChatRequest) -> ChatResponse:
-        question = request.question.strip()
-        if not question:
-            raise HTTPException(status_code=422, detail="请输入问题")
-        if request.job_ids is not None and request.job_id is not None:
-            raise HTTPException(status_code=422, detail="不能同时指定 job_id 和 job_ids")
-        selected_ids = (
-            request.job_ids if request.job_ids is not None
-            else [request.job_id] if request.job_id is not None else None
-        )
+    def resolve_chat_jobs(selected_ids: list[str] | None) -> list[Job]:
         if selected_ids is not None and not selected_ids:
             raise HTTPException(status_code=422, detail="请至少选择一场会议")
         selected_set = set(selected_ids) if selected_ids is not None else None
@@ -89,21 +97,207 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail="所选范围内还没有已完成的会议纪要和转写")
         if selected_set and len(jobs) != len(selected_set):
             raise HTTPException(status_code=409, detail="所选会议中有尚未完成纪要和转写的会议")
+        return jobs
+
+    def explain_note(
+        phrase: str,
+        source_excerpt: str,
+        question: str,
+        jobs: list[Job],
+        exchanges: list[ChatNoteExchange],
+    ) -> tuple[str, list[ChatSource], ChatPronunciation | None]:
+        search = ChatRequest(question=f"{phrase} {source_excerpt} {question}"[:2000])
+        context, sources, retrieved = build_context(jobs, search)
+        note_ai = (
+            ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
+            if len(jobs) == 1 else ai.with_usage_recorder(store.record_chat_usage)
+        )
+        try:
+            answer, pronunciation = note_ai.explain_meeting_phrase(
+                phrase, source_excerpt, question, context, exchanges, retrieved=retrieved,
+            )
+        except AIConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except MiniMaxAPIError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return answer, sources, pronunciation
+
+    def answer_chat(question: str, jobs: list[Job], history: list[ChatTurn]) -> ChatResponse:
+        request = ChatRequest(question=question, history=history)
         context, sources, retrieved = build_context(jobs, request)
         chat_ai = (
             ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
-            if selected_set and len(selected_set) == 1
-            else ai.with_usage_recorder(store.record_chat_usage)
+            if len(jobs) == 1 else ai.with_usage_recorder(store.record_chat_usage)
         )
         try:
             answer = chat_ai.answer_meeting_question(
-                question, context, request.history, retrieved=retrieved,
+                question, context, history, retrieved=retrieved,
             )
         except AIConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except MiniMaxAPIError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return ChatResponse(answer=answer, sources=sources, retrieved=retrieved)
+
+    @app.post("/api/chat", response_model=ChatResponse)
+    def ask_meetings(request: ChatRequest) -> ChatResponse:
+        question = request.question.strip()
+        if not question:
+            raise HTTPException(status_code=422, detail="请输入问题")
+        if request.job_ids is not None and request.job_id is not None:
+            raise HTTPException(status_code=422, detail="不能同时指定 job_id 和 job_ids")
+        selected_ids = (
+            request.job_ids if request.job_ids is not None
+            else [request.job_id] if request.job_id is not None else None
+        )
+        jobs = resolve_chat_jobs(selected_ids)
+        return answer_chat(question, jobs, request.history)
+
+    @app.get("/api/chat/sessions", response_model=list[ChatSession])
+    def list_chat_sessions() -> list[ChatSession]:
+        return session_store.list()
+
+    @app.post("/api/chat/sessions", response_model=ChatSession, status_code=201)
+    def create_chat_session(request: ChatSessionCreate) -> ChatSession:
+        ids = list(dict.fromkeys(request.scope_job_ids))
+        resolve_chat_jobs(ids)
+        return session_store.create(ids)
+
+    @app.get("/api/chat/sessions/{session_id}", response_model=ChatSession)
+    def get_chat_session(session_id: str) -> ChatSession:
+        session = session_store.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="对话不存在")
+        return session
+
+    @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatSession)
+    def ask_chat_session(session_id: str, request: ChatSessionQuestion) -> ChatSession:
+        session = session_store.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="对话不存在")
+        question = request.question.strip()
+        if not question:
+            raise HTTPException(status_code=422, detail="请输入问题")
+        jobs = resolve_chat_jobs(session.scope_job_ids)
+        history = [
+            ChatTurn(role=message.role, content=message.content[:4000])
+            for message in session.messages[-10:]
+        ]
+        result = answer_chat(question, jobs, history)
+        user_message = ChatSessionMessage(role="user", content=question)
+        assistant_message = ChatSessionMessage(
+            role="assistant", content=result.answer,
+            sources=result.sources, retrieved=result.retrieved,
+        )
+        title = session.title if session.messages else question[:40]
+        title_generated_by_ai = session.title_generated_by_ai
+        if not session.title_is_manual:
+            title_ai = (
+                ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
+                if len(jobs) == 1 else ai.with_usage_recorder(store.record_chat_usage)
+            )
+            try:
+                title = title_ai.generate_chat_title(
+                    [*session.messages, user_message, assistant_message],
+                )
+                title_generated_by_ai = not app_settings.mock_ai
+            except (AIConfigurationError, MiniMaxAPIError):
+                pass
+        try:
+            return session_store.append_exchange(
+                session_id,
+                len(session.messages),
+                user_message,
+                assistant_message,
+                title,
+                title_generated_by_ai,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="对话不存在") from exc
+
+    @app.patch("/api/chat/sessions/{session_id}", response_model=ChatSession)
+    def rename_chat_session(session_id: str, request: ChatSessionUpdate) -> ChatSession:
+        title = request.title.strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="请输入对话名称")
+        try:
+            return session_store.rename(session_id, title)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="对话不存在") from exc
+
+    @app.delete("/api/chat/sessions/{session_id}", status_code=204)
+    def delete_chat_session(session_id: str) -> None:
+        if not session_store.delete(session_id):
+            raise HTTPException(status_code=404, detail="对话不存在")
+
+    @app.get("/api/chat/notes", response_model=list[ChatNote])
+    def list_chat_notes() -> list[ChatNote]:
+        return note_store.list()
+
+    @app.post("/api/chat/notes", response_model=ChatNote, status_code=201)
+    def create_chat_note(request: ChatNoteCreate) -> ChatNote:
+        phrase = request.phrase.strip()
+        excerpt = request.source_excerpt.strip()
+        if not phrase or not excerpt:
+            raise HTTPException(status_code=422, detail="请选择要标注的词语")
+        scope_job_ids = list(dict.fromkeys(request.scope_job_ids))
+        jobs = resolve_chat_jobs(scope_job_ids)
+        question = "请解释这个词或短语的通常含义，以及在所选会议中的具体含义。"
+        if request.session_id is not None:
+            session = session_store.get(request.session_id)
+            if session is None:
+                raise HTTPException(status_code=404, detail="对话不存在")
+            if set(session.scope_job_ids) != set(scope_job_ids):
+                raise HTTPException(status_code=422, detail="标注范围与对话不一致")
+            message = next(
+                (item for item in session.messages if item.id == request.message_id), None,
+            )
+            if message is None or message.content[
+                request.selection_start:request.selection_end
+            ] != phrase or excerpt not in message.content:
+                raise HTTPException(status_code=422, detail="标注内容与对话不一致")
+        answer, sources, pronunciation = explain_note(phrase, excerpt, question, jobs, [])
+        note = ChatNote(
+            phrase=phrase,
+            source_excerpt=excerpt,
+            scope_job_ids=scope_job_ids,
+            message_id=request.message_id,
+            session_id=request.session_id,
+            selection_start=request.selection_start,
+            selection_end=request.selection_end,
+            exchanges=[ChatNoteExchange(question="释义", answer=answer)],
+            sources=sources,
+            pronunciation=pronunciation,
+        )
+        return note_store.create(note)
+
+    @app.post("/api/chat/notes/{note_id}/ask", response_model=ChatNote)
+    def ask_chat_note(note_id: str, request: ChatNoteQuestion) -> ChatNote:
+        note = note_store.get(note_id)
+        if not note:
+            raise HTTPException(status_code=404, detail="标注不存在")
+        question = request.question.strip()
+        if not question:
+            raise HTTPException(status_code=422, detail="请输入追问")
+        if len(note.exchanges) >= 20:
+            raise HTTPException(status_code=409, detail="这条标注的追问已达到上限")
+        jobs = resolve_chat_jobs(note.scope_job_ids)
+        answer, sources, _ = explain_note(
+            note.phrase, note.source_excerpt, question, jobs, note.exchanges,
+        )
+        try:
+            return note_store.add_exchange(
+                note_id, ChatNoteExchange(question=question, answer=answer), sources,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="标注不存在") from exc
+
+    @app.delete("/api/chat/notes/{note_id}", status_code=204)
+    def delete_chat_note(note_id: str) -> None:
+        if not note_store.delete(note_id):
+            raise HTTPException(status_code=404, detail="标注不存在")
 
     @app.get("/api/jobs/{job_id}", response_model=Job)
     def get_job(job_id: str) -> Job:

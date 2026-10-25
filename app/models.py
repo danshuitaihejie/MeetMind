@@ -119,6 +119,88 @@ class ChatResponse(BaseModel):
     retrieved: bool = False
 
 
+class ChatSessionCreate(BaseModel):
+    scope_job_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class ChatSessionQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class ChatSessionUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+
+class ChatSessionMessage(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    role: Literal["user", "assistant"]
+    content: str
+    sources: list[ChatSource] = Field(default_factory=list)
+    retrieved: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ChatSession(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    title: str = "新对话"
+    title_is_manual: bool = False
+    title_generated_by_ai: bool = False
+    scope_job_ids: list[str]
+    messages: list[ChatSessionMessage] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ChatPronunciation(BaseModel):
+    ipa: str = Field(min_length=1, max_length=100)
+    language: Literal["en-US", "en-GB"] = "en-US"
+
+
+class ChatNoteCreate(BaseModel):
+    phrase: str = Field(min_length=1, max_length=100)
+    source_excerpt: str = Field(min_length=1, max_length=500)
+    scope_job_ids: list[str] = Field(min_length=1, max_length=500)
+    message_id: str = Field(min_length=1, max_length=100)
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    selection_start: int = Field(ge=0)
+    selection_end: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> ChatNoteCreate:
+        phrase = self.phrase.strip()
+        if self.selection_end - self.selection_start != len(phrase):
+            raise ValueError("标注位置与词语长度不一致")
+        if phrase not in self.source_excerpt:
+            raise ValueError("原文摘录中未包含所选词语")
+        return self
+
+
+class ChatNoteQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class ChatNoteExchange(BaseModel):
+    question: str
+    answer: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ChatNote(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    phrase: str
+    source_excerpt: str
+    scope_job_ids: list[str]
+    message_id: str
+    session_id: str | None = None
+    selection_start: int
+    selection_end: int
+    exchanges: list[ChatNoteExchange] = Field(default_factory=list)
+    sources: list[ChatSource] = Field(default_factory=list)
+    pronunciation: ChatPronunciation | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class AIUsageCall(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     operation: str
