@@ -84,6 +84,7 @@ class CorrectionMemory:
         with self._connect() as connection:
             rows = connection.execute(
                 """SELECT original_term, MIN(replacement) FROM corrections
+                   WHERE source != 'asr_conflict'
                    GROUP BY original_term HAVING COUNT(DISTINCT replacement) = 1"""
             ).fetchall()
         return {

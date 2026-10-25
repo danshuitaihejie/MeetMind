@@ -12,7 +12,9 @@ from app.chat_sessions import ChatSessionStore
 from app.config import Settings
 from app.main import create_app
 from app.models import (
+    ChatNote,
     ChatNoteExchange,
+    ChatPassage,
     ChatPronunciation,
     ChatRequest,
     ChatSession,
@@ -99,6 +101,46 @@ def test_saved_chat_without_passages_recovers_context_on_read(tmp_path: Path) ->
     with TestClient(app) as client:
         restored = client.get(f"/api/chat/sessions/{session.id}").json()
     assert "苍鹭计划预算由林工负责" in restored["messages"][1]["sources"][0]["passages"][0]["text"]
+
+
+def test_saved_chat_passage_gets_existing_time_axis_on_read(tmp_path: Path) -> None:
+    job = meeting("one", "预算纪要", "苍鹭计划预算由林工负责。")
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    app.state.store.create(job)
+    review = app.state.store.job_dir("one") / "review"
+    review.mkdir()
+    (review / "segments.json").write_text(json.dumps([
+        TranscriptSegment(index=0, start_seconds=72.5, end_seconds=76.2,
+                          text="苍鹭计划预算由林工负责").model_dump(mode="json"),
+    ], ensure_ascii=False), encoding="utf-8")
+    session = app.state.session_store.create(["one"])
+    source = ChatSource(
+        job_id=job.id, filename=job.filename, created_at=job.created_at,
+        passages=[ChatPassage(text="苍鹭计划预算由林工负责")],
+    )
+    app.state.session_store.append_exchange(
+        session.id, 0,
+        ChatSessionMessage(role="user", content="预算由谁负责？"),
+        ChatSessionMessage(role="assistant", content="林工负责", sources=[source]),
+        "预算", False,
+    )
+    app.state.note_store.create(ChatNote(
+        phrase="苍鹭", source_excerpt="苍鹭计划预算由林工负责",
+        scope_job_ids=["one"], message_id="saved-answer",
+        selection_start=0, selection_end=2,
+        exchanges=[ChatNoteExchange(question="释义", answer="计划名称", sources=[source])],
+        sources=[source],
+    ))
+    with TestClient(app) as client:
+        restored = client.get(f"/api/chat/sessions/{session.id}").json()
+        notes = client.get("/api/chat/notes").json()
+    passage = restored["messages"][1]["sources"][0]["passages"][0]
+    assert passage == {
+        "text": "苍鹭计划预算由林工负责",
+        "start_seconds": 72.5,
+        "end_seconds": 76.2,
+    }
+    assert notes[0]["exchanges"][0]["sources"][0]["passages"][0] == passage
 
 
 def test_original_media_range_and_exact_review_seek(tmp_path: Path) -> None:

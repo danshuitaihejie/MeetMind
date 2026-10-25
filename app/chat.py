@@ -169,7 +169,7 @@ def _timed_segments(root: Path, job_id: str) -> list[TranscriptSegment]:
 def add_source_passages(
     jobs: list[Job], sources: list[ChatSource], query: str, root: Path,
 ) -> list[ChatSource]:
-    """Attach searchable original transcript excerpts; timecodes require actual alignment."""
+    """Attach excerpts and fill saved excerpt timecodes from existing alignment."""
     jobs_by_id = {job.id: job for job in jobs}
     query_terms = _terms(query)
     enriched: list[ChatSource] = []
@@ -179,6 +179,24 @@ def add_source_passages(
             enriched.append(source)
             continue
         segments = _timed_segments(root, job.id)
+        if source.passages:
+            if not segments:
+                enriched.append(source)
+                continue
+            from app.alignment import locate_text
+
+            passages = []
+            for passage in source.passages:
+                if passage.start_seconds is not None:
+                    passages.append(passage)
+                    continue
+                match = locate_text(passage.text, segments)
+                passages.append(passage.model_copy(update={
+                    "start_seconds": match.start_seconds,
+                    "end_seconds": match.end_seconds,
+                }) if match else passage)
+            enriched.append(source.model_copy(update={"passages": passages}))
+            continue
         if segments:
             candidates = [
                 ChatPassage(

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from pathlib import Path
 
 from app.ai import AIService
+from app.asr_conflicts import find_asr_conflicts
 from app.corrections import CorrectionRecord
 from app.media import MediaProcessor
 from app.models import (
@@ -104,6 +106,23 @@ def _item_term_position(segment: TranscriptSegment | None, item: ReviewItem) -> 
     ):
         return None
     return position
+
+
+def _ocr_supports(term: str, line: str) -> bool:
+    normalized_term = re.sub(r"[^a-z0-9]", "", term.casefold())
+    normalized_line = re.sub(r"[^a-z0-9]", "", line.casefold())
+    return len(normalized_term) >= 4 and normalized_term in normalized_line
+
+
+def _select_ocr_lines(lines: list[str], original: str, suggested: str) -> list[str]:
+    unique = list(dict.fromkeys(lines))
+    # Small command labels often appear after many unrelated interface lines.
+    return sorted(
+        unique,
+        key=lambda line: not (
+            _ocr_supports(suggested, line) or _ocr_supports(original, line)
+        ),
+    )[:40]
 
 
 def search_review_term(
@@ -208,7 +227,18 @@ def review_job(
         segments_path = review_dir / "segments.json"
         _save_segments(segments_path, segments)
         store.update(job_id, review_stage="定位疑似错字", review_progress=58)
-        suggestions = ai.find_review_suggestions(segments, job.transcript, job.context)
+        fast_path = store.job_dir(job_id) / "transcript.original.txt"
+        fast_transcript = (
+            store.corrections.apply(fast_path.read_text(encoding="utf-8"))
+            if fast_path.is_file() else job.transcript
+        )
+        conflicts = find_asr_conflicts(segments, fast_transcript)
+        suggestions = ai.find_review_suggestions(segments, fast_transcript, job.context)
+        conflict_keys = {(item.segment_index, item.original_term) for item in conflicts}
+        suggestions = [
+            item for item in suggestions
+            if (item.segment_index, item.original_term) not in conflict_keys
+        ] + conflicts
         by_index = {segment.index: segment for segment in segments}
         items: list[ReviewItem] = []
         for suggestion in suggestions:
@@ -229,6 +259,9 @@ def review_job(
                     suggested_term=suggestion.suggested_term.strip(),
                     confidence=suggestion.confidence,
                     reason=suggestion.reason.strip(),
+                    requires_confirmation=(
+                        suggestion.segment_index, suggestion.original_term
+                    ) in conflict_keys,
                 )
             )
 
@@ -250,11 +283,11 @@ def review_job(
                 continue
 
             middle = (item.start_seconds + item.end_seconds) / 2
-            frame_times = [
-                item.start_seconds,
-                middle,
-                max(item.start_seconds, item.end_seconds - 0.1),
-            ]
+            frame_times = (
+                [item.start_seconds, middle, item.end_seconds + 2, item.end_seconds + 5]
+                if item.requires_confirmation else
+                [item.start_seconds, middle, max(item.start_seconds, item.end_seconds - 0.1)]
+            )
             ocr_lines: list[str] = []
             for frame_time in frame_times:
                 frame_path = frames_dir / f"{item.id}_{item.frame_count}.jpg"
@@ -266,19 +299,33 @@ def review_job(
                 except OCRProcessingError:
                     # OCR is supporting evidence; audio review remains usable if OCR fails.
                     continue
-            item.ocr_text = list(dict.fromkeys(ocr_lines))[:40]
+            item.ocr_text = _select_ocr_lines(
+                ocr_lines, item.original_term, item.suggested_term,
+            )
 
         store.update(job_id, review_stage="融合 OCR 结果", review_progress=90)
         refined = {
             (suggestion.segment_index, suggestion.original_term): suggestion
-            for suggestion in ai.refine_review_suggestions(items, job.context)
+            for suggestion in ai.refine_review_suggestions(
+                [item for item in items if not item.requires_confirmation], job.context,
+            )
         }
         for item in items:
             suggestion = refined.get((item.segment_index, item.original_term))
-            if suggestion:
+            if suggestion and not item.requires_confirmation:
                 item.suggested_term = suggestion.suggested_term.strip()
                 item.confidence = suggestion.confidence
                 item.reason = suggestion.reason.strip()
+            if item.requires_confirmation:
+                if any(_ocr_supports(item.suggested_term, line) for line in item.ocr_text):
+                    item.confidence = 0.95
+                    evidence = "视频画面 OCR 也识别到快速转写中的名称。"
+                else:
+                    evidence = "画面暂未识别到该名称。"
+                item.reason = (
+                    f"快速转写与原速转写存在冲突；{evidence}"
+                    "请听原声并查看画面后确认。"
+                )
 
         store.update(
             job_id,
@@ -306,6 +353,26 @@ def apply_review_corrections(
 ) -> None:
     job = store.get(job_id)
     if not job:
+        return
+    confirmed_ids = {correction.item_id for correction in corrections}
+    unresolved = [
+        item for item in job.review_items
+        if item.requires_confirmation and item.correction_term is None
+        and item.id not in confirmed_ids
+        and not any(
+            correction.segment_index == item.segment_index
+            and correction.term_start == item.term_start
+            and correction.original_term == item.original_term
+            for correction in manual_corrections
+        )
+    ]
+    if unresolved:
+        store.update(
+            job_id,
+            review_status=ReviewStatus.ready,
+            review_stage=f"请先确认 {len(unresolved)} 处两版转写冲突",
+            review_error="两版转写冲突尚未确认；请听原声并查看视频画面。",
+        )
         return
     job_dir = store.job_dir(job_id)
     try:
@@ -354,8 +421,42 @@ def apply_review_corrections(
             edits[(segment.index, correction.term_start, term_end)] = replacement
 
         records: list[CorrectionRecord] = []
+        conflict_spans: set[tuple[int, int]] = set()
+        for item in items_by_id.values():
+            if item.requires_confirmation:
+                position = _item_term_position(
+                    segments_by_index.get(item.segment_index), item,
+                )
+                if position is not None:
+                    conflict_spans.add((item.segment_index, position))
+        manual_corrections = [
+            correction.model_copy(update={"learn_globally": False})
+            if (correction.segment_index, correction.term_start) in conflict_spans
+            else correction
+            for correction in manual_corrections
+        ]
         for (segment_index, term_start, term_end), replacement in sorted(edits.items()):
             segment = segments_by_index[segment_index]
+            matching_manual = next(
+                (
+                    item for item in manual_corrections
+                    if item.segment_index == segment_index and item.term_start == term_start
+                ), None,
+            )
+            if (segment_index, term_start) in conflict_spans or (
+                matching_manual is not None and not matching_manual.learn_globally
+            ):
+                source = "asr_conflict"
+            elif matching_manual is not None:
+                source = "manual"
+            elif any(
+                item.source == "agent" and item.segment_index == segment_index
+                and _item_term_position(segment, item) == term_start
+                for item in items_by_id.values()
+            ):
+                source = "agent"
+            else:
+                source = "suggested"
             records.append(CorrectionRecord(
                 job_id=job_id,
                 segment_index=segment_index,
@@ -363,16 +464,7 @@ def apply_review_corrections(
                 original_term=segment.text[term_start:term_end],
                 replacement=replacement,
                 context_text=segment.text,
-                source=(
-                    "manual" if any(
-                        item.segment_index == segment_index and item.term_start == term_start
-                        for item in manual_corrections
-                    ) else "agent" if any(
-                        item.source == "agent" and item.segment_index == segment_index
-                        and _item_term_position(segment, item) == term_start
-                        for item in items_by_id.values()
-                    ) else "suggested"
-                ),
+                source=source,
             ))
         previous_edit: tuple[int, int, int] | None = None
         for edit in sorted(edits):

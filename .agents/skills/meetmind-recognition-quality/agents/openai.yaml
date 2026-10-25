@@ -1,0 +1,3 @@
+interface:
+  display_name: "MeetMind 识别质量"
+  short_description: "排查会议转写与画面证据冲突，修复误识别并验证回归"

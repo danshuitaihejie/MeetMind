@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title>MeetMind · 让会议只留下结论</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261025-16" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261025-19" />
   </head>
   <body class="desktop-view-upload">
     <header class="topbar">
@@ -152,6 +152,10 @@
           <aside class="chat-history" aria-label="对话记录">
             <div class="chat-history-heading"><strong>对话记录</strong><button class="chat-new" id="chatNew" type="button">＋ 新建对话</button></div>
             <div class="chat-history-actions"><button class="chat-rename" id="chatRename" type="button" disabled>重命名</button><button class="chat-delete" id="chatDelete" type="button" disabled>删除</button></div>
+            <div class="chat-session-id hidden" id="chatSessionId">
+              <div><span>会话 ID</span><button id="chatSessionIdCopy" type="button">复制会话 ID</button></div>
+              <code id="chatSessionIdValue"></code>
+            </div>
             <nav class="chat-session-list" id="chatSessionList" aria-label="已保存对话"></nav>
           </aside>
           <div class="chat-workspace">
@@ -167,6 +171,7 @@
                 <div class="chat-scope-options" id="chatScopeOptions" role="group" aria-labelledby="chatScopeLabel"></div>
               </div>
             </details>
+            <button class="chat-record-open" id="chatRecordOpen" type="button">选择处理记录 ↗</button>
             <button class="chat-notes-toggle" id="chatNotesToggle" type="button" aria-controls="chatNotesPanel" aria-expanded="false">标注笔记 <span id="chatNotesCount"></span></button>
             </div>
             <p class="chat-hint" id="chatHint">从会议纪要和完整转写中查找依据，并列出参考会议。</p>
@@ -250,7 +255,10 @@
       <article class="job-card">
         <div class="job-summary">
           <div class="job-file-icon">AU</div>
-          <div class="job-title"><strong></strong><span></span></div>
+          <div class="job-title">
+            <strong></strong><span></span>
+            <div class="job-id"><code></code><button type="button">复制 ID</button></div>
+          </div>
           <div class="job-state"><i></i><span></span></div>
           <button class="job-chat" type="button" aria-label="询问这场会议" title="询问这场会议">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
@@ -343,7 +351,7 @@
               </div>
               <div class="review-list"></div>
               <p class="review-description">
-                “一键填入”只填写待确认的 AI 建议，不会保存。请检查或修改后，再点击下方按钮应用修正并重新生成纪要。
+                “一键填入”只填写普通 AI 建议，不包含两版转写冲突，也不会保存。请逐项核对冲突词；检查或修改后，再点击下方按钮应用修正并重新生成纪要。
               </p>
               <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
             </div>
@@ -357,6 +365,6 @@
       <p>更少回放，更多推进。</p>
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
-    <script src="/assets/app.js?v=20261025-15" defer></script>
+    <script src="/assets/app.js?v=20261025-21" defer></script>
   </body>
 </html>

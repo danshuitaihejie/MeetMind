@@ -64,6 +64,7 @@ class ReviewItem(BaseModel):
     frame_count: int = Field(default=0, ge=0)
     correction_term: str | None = None
     source: Literal["ai", "agent"] = "ai"
+    requires_confirmation: bool = False
 
 
 class ReviewCorrection(BaseModel):
@@ -76,6 +77,7 @@ class ManualReviewCorrection(BaseModel):
     term_start: int = Field(ge=0)
     original_term: str = Field(min_length=1, max_length=100)
     replacement: str = Field(min_length=1, max_length=100)
+    learn_globally: bool = True
 
 
 class ManualReviewMatch(BaseModel):
@@ -88,7 +90,7 @@ class ManualReviewMatch(BaseModel):
 
 
 class ReviewSubmission(BaseModel):
-    corrections: list[ReviewCorrection] = Field(max_length=20)
+    corrections: list[ReviewCorrection] = Field(max_length=200)
     manual_corrections: list[ManualReviewCorrection] = Field(
         default_factory=list,
         max_length=200,

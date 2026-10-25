@@ -38,7 +38,10 @@ class JobStore:
                         original_term=item.original_term,
                         replacement=item.correction_term,
                         context_text=item.context_text,
-                        source="agent" if item.source == "agent" else "suggested",
+                        source=(
+                            "asr_conflict" if item.requires_confirmation
+                            else "agent" if item.source == "agent" else "suggested"
+                        ),
                         created_at=job.updated_at.isoformat(),
                     ))
             contexts: dict[int, str] = {}
@@ -64,7 +67,7 @@ class JobStore:
                     original_term=correction.original_term,
                     replacement=correction.replacement,
                     context_text=contexts.get(correction.segment_index, job.transcript or ""),
-                    source="manual",
+                    source="manual" if correction.learn_globally else "asr_conflict",
                     created_at=job.updated_at.isoformat(),
                 ))
         self.corrections.remember(records)

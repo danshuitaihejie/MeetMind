@@ -50,6 +50,23 @@ def test_conflicting_replacements_require_manual_confirmation(tmp_path: Path) ->
     assert memory.apply("Meet Mine") == "Meet Mine"
 
 
+def test_asr_conflict_does_not_become_a_global_word_replacement(tmp_path: Path) -> None:
+    path = tmp_path / "corrections.sqlite3"
+    memory = CorrectionMemory(path)
+    correction = record("peach", "pitch")
+    memory.remember([CorrectionRecord(
+        job_id=correction.job_id,
+        segment_index=correction.segment_index,
+        term_start=correction.term_start,
+        original_term=correction.original_term,
+        replacement=correction.replacement,
+        context_text=correction.context_text,
+        source="asr_conflict",
+    )])
+
+    assert CorrectionMemory(path).apply("peach fruit") == "peach fruit"
+
+
 def test_single_character_and_english_substrings_are_not_replaced(
     tmp_path: Path,
 ) -> None:

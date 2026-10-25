@@ -152,8 +152,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for index, message in enumerate(session.messages):
             if message.role != "assistant" or not message.sources:
                 continue
-            if any(source.passages for source in message.sources):
-                continue
             question = session.messages[index - 1].content if index else ""
             message.sources = add_source_passages(
                 jobs, message.sources, f"{question} {message.content}", store.root,
@@ -163,8 +161,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def restore_note_passages(note: ChatNote) -> ChatNote:
         jobs = [job for job_id in note.scope_job_ids if (job := store.get(job_id))]
         for exchange in note.exchanges:
-            if exchange.sources and any(source.passages for source in exchange.sources):
-                continue
             base = exchange.sources or note.sources
             exchange.sources = add_source_passages(
                 jobs, base,

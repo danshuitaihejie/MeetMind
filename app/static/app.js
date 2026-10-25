@@ -63,8 +63,12 @@ const elements = {
   chatNew: $("#chatNew"),
   chatRename: $("#chatRename"),
   chatDelete: $("#chatDelete"),
+  chatSessionId: $("#chatSessionId"),
+  chatSessionIdValue: $("#chatSessionIdValue"),
+  chatSessionIdCopy: $("#chatSessionIdCopy"),
   chatScopeSummary: $("#chatScopeSummary"),
   chatScopeOptions: $("#chatScopeOptions"),
+  chatRecordOpen: $("#chatRecordOpen"),
   chatSelectAll: $("#chatSelectAll"),
   chatSelectNone: $("#chatSelectNone"),
   chatHint: $("#chatHint"),
@@ -587,6 +591,20 @@ function openMeetingChat(jobId) {
   elements.chatQuestion.focus({ preventScroll: true });
 }
 
+function openMeetingRecord(jobId) {
+  if (!state.jobs.some((job) => job.id === jobId)) return;
+  elements.chatScope.open = false;
+  state.expandedJobId = jobId;
+  setDesktopView("jobs");
+  renderJobs();
+  if (desktopMedia.matches) {
+    elements.jobsList.scrollTop = 0;
+  } else {
+    elements.jobsList.querySelector(`[data-job-id="${CSS.escape(jobId)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function setChatError(message = "") {
   elements.chatError.textContent = message;
   elements.chatError.classList.toggle("hidden", !message);
@@ -616,15 +634,24 @@ function renderChatScope() {
     state.chatScopeJobsSignature = signature;
     elements.chatScopeOptions.replaceChildren();
     for (const job of jobs) {
+      const row = document.createElement("div");
+      row.className = "chat-scope-option";
       const label = document.createElement("label");
-      label.className = "chat-scope-option";
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.value = job.id;
       const name = document.createElement("span");
       name.textContent = `${job.filename} · ${meetingTitle(job) || "会议主题未提取"}`;
       label.append(checkbox, name);
-      elements.chatScopeOptions.appendChild(label);
+      const record = document.createElement("button");
+      record.type = "button";
+      record.className = "chat-scope-record";
+      record.dataset.jobId = job.id;
+      record.textContent = "查看记录 ↗";
+      record.setAttribute("aria-label", `查看「${meetingTitle(job) || job.filename}」的处理记录`);
+      record.addEventListener("click", () => openMeetingRecord(job.id));
+      row.append(label, record);
+      elements.chatScopeOptions.appendChild(row);
     }
     if (!jobs.length) {
       const empty = document.createElement("p");
@@ -634,8 +661,14 @@ function renderChatScope() {
     }
   }
   const ids = selectedChatIds(jobs);
+  const onlySelectedJob = ids.length === 1 ? jobs.find((job) => job.id === ids[0]) : null;
   renderChatSessions();
   elements.chatScopeSummary.textContent = `已选 ${ids.length} / ${jobs.length} 场会议`;
+  elements.chatRecordOpen.disabled = jobs.length === 0;
+  elements.chatRecordOpen.textContent = onlySelectedJob ? "查看处理记录 ↗" : "选择处理记录 ↗";
+  elements.chatRecordOpen.title = onlySelectedJob
+    ? `查看「${meetingTitle(onlySelectedJob) || onlySelectedJob.filename}」的处理记录`
+    : "从查找范围中选择要打开的会议处理记录";
   elements.chatScopeOptions.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
     checkbox.checked = ids.includes(checkbox.value);
     checkbox.disabled = state.chatLoading;
@@ -729,6 +762,13 @@ function renderChatSessions() {
       state.activeChatSessionId === session.id, titleSource);
   }
   list.scrollTop = scrollTop;
+  const activeSession = state.chatSessions.find((session) => session.id === state.activeChatSessionId);
+  elements.chatSessionId.classList.toggle("hidden", !activeSession);
+  elements.chatSessionIdValue.textContent = activeSession?.id || "";
+  elements.chatSessionIdValue.title = activeSession?.id || "";
+  elements.chatSessionIdCopy.textContent = "复制会话 ID";
+  elements.chatSessionIdCopy.setAttribute("aria-label", activeSession
+    ? `复制会话 ID：${activeSession.id}` : "复制会话 ID");
   elements.chatNew.disabled = state.chatLoading;
   elements.chatRename.disabled = state.chatLoading || !state.activeChatSessionId;
   elements.chatDelete.disabled = state.chatLoading || !state.activeChatSessionId;
@@ -780,6 +820,13 @@ function sourceTime(seconds) {
   return `${String(Math.floor(total / 3600)).padStart(2, "0")}:${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function sourceTimeRange(passage) {
+  if (!Number.isFinite(passage?.start_seconds)) return "点开后定位时间";
+  const start = sourceTime(passage.start_seconds);
+  return Number.isFinite(passage.end_seconds) && passage.end_seconds > passage.start_seconds
+    ? `${start}–${sourceTime(passage.end_seconds)}` : start;
+}
+
 async function selectSourcePassage(source, passage, button) {
   const selectionToken = ++state.sourceSelectionToken;
   for (const item of elements.sourcePlayerList.querySelectorAll("button")) {
@@ -811,10 +858,8 @@ async function selectSourcePassage(source, passage, button) {
     }
   }
   if (selectionToken !== state.sourceSelectionToken || state.desktopView !== "source") return;
-  button.querySelector("span").textContent = sourceTime(position.start_seconds);
-  const timeRange = Number.isFinite(position.end_seconds)
-    ? `${sourceTime(position.start_seconds)}–${sourceTime(position.end_seconds)}`
-    : sourceTime(position.start_seconds);
+  button.querySelector("span").textContent = sourceTimeRange(position);
+  const timeRange = sourceTimeRange(position);
   elements.sourcePlayerContext.textContent = `${timeRange} · ${position.text}`;
   elements.sourcePlayerStatus.textContent = hasPassage
     ? "已定位到原片。可继续播放，查看前后语境。"
@@ -854,8 +899,10 @@ function renderSourceEvidence(sources) {
   evidence.className = "chat-evidence";
   const count = sources.reduce((sum, source) => sum + (source.passages?.length || 0), 0);
   const preview = document.createElement("span");
-  preview.textContent = sources.flatMap((source) => source.passages || [])[0]?.text
-    || "可查看完整原始文件";
+  const firstPassage = sources.flatMap((source) => source.passages || [])[0];
+  preview.textContent = firstPassage
+    ? `${sourceTimeRange(firstPassage)} · ${firstPassage.text}`
+    : "可查看完整原始文件";
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = `查看原片与上下文 · ${count} 段 →`;
@@ -882,8 +929,7 @@ function openSourceEvidence(sources, trigger) {
     const title = document.createElement("strong");
     title.textContent = job ? meetingTitle(job) || source.filename : source.filename;
     const time = document.createElement("span");
-    time.textContent = Number.isFinite(passage?.start_seconds)
-      ? sourceTime(passage.start_seconds) : "待定位";
+    time.textContent = passage ? sourceTimeRange(passage) : "无引用片段";
     const excerpt = document.createElement("small");
     excerpt.textContent = passage?.text || "查看完整原始文件";
     button.append(title, time, excerpt);
@@ -1253,6 +1299,8 @@ function renderReviewItem(job, item) {
   confidence.textContent = pending
     ? item.source === "agent"
       ? "Agent 标记 · 待人工确认"
+      : item.requires_confirmation
+        ? "两版转写冲突 · 待人工确认"
       : `待确认 · AI 估值 ${Math.round(item.confidence * 100)}%`
     : "已确认";
   header.append(time, confidence);
@@ -1547,7 +1595,8 @@ function renderReview(job, card) {
     } else {
       const pendingCount = job.review_items.filter((item) => item.correction_term == null).length;
       const suggestedItems = job.review_items.filter((item) => (
-        item.source === "ai" && item.correction_term == null && item.suggested_term.trim()
+        item.source === "ai" && !item.requires_confirmation
+        && item.correction_term == null && item.suggested_term.trim()
       ));
       $("strong", listHeading).textContent = `疑似词 · 待确认 ${pendingCount} / ${job.review_items.length}`;
       listHeading.classList.remove("hidden");
@@ -1651,6 +1700,21 @@ function renderJob(job) {
   $(".job-title strong", card).textContent = title || job.filename;
   $(".job-title span", card).textContent = title
     ? `${job.filename} · ${createdAt}` : createdAt;
+  const jobId = $(".job-id code", card);
+  jobId.textContent = `会议 ID：${job.id}`;
+  jobId.title = job.id;
+  const copyJobId = $(".job-id button", card);
+  copyJobId.textContent = "复制会议 ID";
+  copyJobId.setAttribute("aria-label", `复制会议 ID：${job.id}`);
+  copyJobId.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(`会议 ID：${job.id}`);
+      copyJobId.textContent = "已复制会议 ID ✓";
+    } catch {
+      copyJobId.textContent = "复制失败";
+    }
+    window.setTimeout(() => { copyJobId.textContent = "复制会议 ID"; }, 1800);
+  });
   const chatShortcut = $(".job-chat", card);
   const canChat = job.status === "completed" && job.minutes && job.transcript;
   chatShortcut.disabled = !canChat;
@@ -1877,6 +1941,17 @@ elements.speed.addEventListener("change", updateEstimate);
 elements.trim.addEventListener("change", updateEstimate);
 elements.submit.addEventListener("click", upload);
 elements.refresh.addEventListener("click", loadJobs);
+elements.chatRecordOpen.addEventListener("click", () => {
+  const ids = selectedChatIds();
+  if (ids.length === 1) {
+    openMeetingRecord(ids[0]);
+    return;
+  }
+  elements.chatScope.open = true;
+  const records = [...elements.chatScopeOptions.querySelectorAll(".chat-scope-record")];
+  (records.find((record) => ids.includes(record.dataset.jobId)) || records[0])
+    ?.focus({ preventScroll: true });
+});
 elements.chatScopeOptions.addEventListener("change", (event) => {
   if (state.chatLoading || event.target.type !== "checkbox") return;
   if (state.selectedChatJobIds === null) state.selectedChatJobIds = new Set(selectedChatIds());
@@ -1906,6 +1981,17 @@ elements.chatNew.addEventListener("click", () => {
   setChatError();
   renderChatScope();
   elements.chatQuestion.focus();
+});
+elements.chatSessionIdCopy.addEventListener("click", async () => {
+  const session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
+  if (!session) return;
+  try {
+    await navigator.clipboard.writeText(`会话 ID：${session.id}`);
+    elements.chatSessionIdCopy.textContent = "已复制会话 ID ✓";
+  } catch {
+    elements.chatSessionIdCopy.textContent = "复制失败";
+  }
+  window.setTimeout(() => { elements.chatSessionIdCopy.textContent = "复制会话 ID"; }, 1800);
 });
 elements.chatRename.addEventListener("click", async () => {
   const session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
