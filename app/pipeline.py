@@ -18,7 +18,9 @@ def process_job(
     job = store.get(job_id)
     if not job:
         return
-    ai = ai.with_usage_recorder(lambda call: store.record_usage(job_id, call))
+    ai = ai.with_language(job.language).with_usage_recorder(
+        lambda call: store.record_usage(job_id, call),
+    )
 
     output_path = store.job_dir(job_id) / "compressed.mp3"
     try:

@@ -1,4 +1,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
+const i18n = window.MeetMindI18n;
+const uiLanguage = i18n.language;
+i18n.start();
 
 const state = {
   file: null,
@@ -206,6 +209,7 @@ function upload() {
   data.append("speed", elements.speed.value);
   data.append("trim_silence", String(elements.trim.checked));
   data.append("context", elements.context.value);
+  data.append("language", uiLanguage);
 
   const request = new XMLHttpRequest();
   request.open("POST", "/api/jobs");
@@ -233,7 +237,7 @@ function upload() {
       if (!desktopMedia.matches) $("#jobsSection").scrollIntoView({ behavior: "smooth", block: "start" });
       startPolling();
     } else {
-      try { setError(JSON.parse(request.responseText).detail || "上传失败"); }
+      try { setError(i18n.translate(JSON.parse(request.responseText).detail || "上传失败")); }
       catch { setError("上传失败，请稍后重试"); }
     }
   };
@@ -271,7 +275,8 @@ const usageStatusLabels = {
 };
 
 function usageValue(value) {
-  return Number.isInteger(value) && value >= 0 ? value.toLocaleString("zh-CN") : "未报告";
+  return Number.isInteger(value) && value >= 0
+    ? value.toLocaleString(uiLanguage === "en" ? "en-US" : "zh-CN") : "未报告";
 }
 
 function usageMetric(label, value) {
@@ -320,7 +325,9 @@ function renderUsage(job, card) {
   const failedCount = usageValue(summary?.failed_call_count);
   const missingText = usageValue(summary?.missing_text_usage_calls);
   const missingAsr = usageValue(summary?.missing_asr_duration_calls);
-  note.textContent = `调用 ${callCount} 次（文本 ${textCount} · ASR ${asrCount} · 模拟 ${mockCount}） · 失败 ${failedCount} 次 · 缺少文本 Token 统计 ${missingText} 次 · ASR 时长未报告 ${missingAsr} 次。缓存输入已包含在输入 Token 中；ASR 按音频时长统计。Token 统计不等同于订阅额度扣减或账单金额。`;
+  note.textContent = uiLanguage === "en"
+    ? `${callCount} calls (text ${textCount} · ASR ${asrCount} · mock ${mockCount}) · ${failedCount} failed · ${missingText} missing text usage · ${missingAsr} missing ASR durations. Cached input is included in input tokens. ASR is measured by audio duration. These figures are not subscription deductions or billing totals.`
+    : `调用 ${callCount} 次（文本 ${textCount} · ASR ${asrCount} · 模拟 ${mockCount}） · 失败 ${failedCount} 次 · 缺少文本 Token 统计 ${missingText} 次 · ASR 时长未报告 ${missingAsr} 次。缓存输入已包含在输入 Token 中；ASR 按音频时长统计。Token 统计不等同于订阅额度扣减或账单金额。`;
 
   const heading = document.createElement("h3");
   heading.className = "usage-calls-heading";
@@ -341,12 +348,15 @@ function renderUsage(job, card) {
 
     const metadata = document.createElement("p");
     metadata.className = "usage-call-meta";
-    const kind = call.kind === "asr" ? "ASR" : call.kind === "text" ? "文本" : "类型未知";
+    const kind = call.kind === "asr" ? "ASR" : call.kind === "text"
+      ? i18n.translate("文本") : i18n.translate("类型未知");
     const model = call.model || "模型未记录";
     const attempt = Number.isInteger(call.attempt) && call.attempt > 1 ? ` · 第 ${call.attempt} 次请求（重试）` : "";
     const createdAt = call.created_at ? new Date(call.created_at) : null;
     const time = createdAt && !Number.isNaN(createdAt.getTime())
-      ? createdAt.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) : "";
+      ? createdAt.toLocaleString(uiLanguage === "en" ? "en-US" : "zh-CN", {
+        timeZone: "Asia/Shanghai", hour12: false,
+      }) : "";
     metadata.textContent = `${kind} · ${model}${attempt}${time ? ` · ${time}` : ""}`;
 
     const values = document.createElement("p");
@@ -451,10 +461,19 @@ function showResult(content, text, isMinutes) {
 }
 
 function minutesVersionLabel(version, index, total) {
+  if (uiLanguage === "en") {
+    const label = version.source === "legacy"
+      ? "Saved minutes (original version unavailable)"
+      : index === 0 ? "First version" : `Version ${index + 1}`;
+    const time = new Date(version.created_at).toLocaleString("en-US");
+    return `${label}${index === total - 1 ? " · Latest" : ""} · ${time}`;
+  }
   const label = version.source === "legacy"
     ? "已保存纪要（历史首次版不可恢复）"
     : index === 0 ? "首次生成" : `第 ${index + 1} 版`;
-  const time = new Date(version.created_at).toLocaleString("zh-CN");
+  const time = new Date(version.created_at).toLocaleString(
+    uiLanguage === "en" ? "en-US" : "zh-CN",
+  );
   return `${label}${index === total - 1 ? " · 最新" : ""} · ${time}`;
 }
 
@@ -502,7 +521,7 @@ async function requestJSON(url, options = {}) {
     let message = "请求失败";
     try { message = (await response.json()).detail || message; }
     catch { /* Use the generic message. */ }
-    throw new Error(message);
+    throw new Error(i18n.translate(message));
   }
   if (response.status === 204) return null;
   return response.json();
@@ -566,7 +585,7 @@ function renderDesktopMeetingList() {
     const title = document.createElement("strong");
     title.textContent = meetingTitle(job) || job.filename;
     const meta = document.createElement("span");
-    meta.textContent = `${job.filename} · ${statusLabels[job.status] || job.status}`;
+    meta.textContent = `${job.filename} · ${i18n.translate(statusLabels[job.status] || job.status)}`;
     button.append(title, meta);
     button.addEventListener("click", () => {
       state.expandedJobId = job.id;
@@ -641,7 +660,7 @@ function renderChatScope() {
       checkbox.type = "checkbox";
       checkbox.value = job.id;
       const name = document.createElement("span");
-      name.textContent = `${job.filename} · ${meetingTitle(job) || "会议主题未提取"}`;
+      name.textContent = `${job.filename} · ${meetingTitle(job) || i18n.translate("会议主题未提取")}`;
       label.append(checkbox, name);
       const record = document.createElement("button");
       record.type = "button";
@@ -713,7 +732,7 @@ function renderChatSessions() {
     const titleRow = document.createElement("span");
     titleRow.className = "chat-session-title-row";
     const name = document.createElement("strong");
-    name.textContent = title;
+    name.textContent = title === "新对话" ? i18n.translate(title) : title;
     name.title = title;
     titleRow.append(name);
     if (titleSource) {
@@ -724,12 +743,14 @@ function renderChatSessions() {
     }
     const question = document.createElement("span");
     question.className = "chat-session-question";
-    question.textContent = firstQuestion || "暂无提问";
-    question.title = firstQuestion || "暂无提问";
+    question.textContent = firstQuestion || i18n.translate("暂无提问");
+    question.title = firstQuestion || i18n.translate("暂无提问");
     const details = document.createElement("span");
     details.className = "chat-session-meta";
     details.textContent = meta;
-    button.setAttribute("aria-label", `${title}${titleSource ? `，${titleSource}` : ""}。${firstQuestion || "暂无提问"}。${meta}`);
+    button.setAttribute("aria-label", uiLanguage === "en"
+      ? `${i18n.translate(title)}${titleSource ? `, ${i18n.translate(titleSource)}` : ""}. ${firstQuestion || "No questions yet"}. ${i18n.translate(meta)}`
+      : `${title}${titleSource ? `，${titleSource}` : ""}。${firstQuestion || "暂无提问"}。${meta}`);
     button.append(titleRow, question, details);
     button.addEventListener("click", () => {
       if (!id) {
@@ -746,7 +767,7 @@ function renderChatSessions() {
     });
     list.appendChild(button);
   };
-  addItem(null, "新对话", "尚未提问", "尚未保存", !state.activeChatSessionId);
+  addItem(null, i18n.translate("新对话"), i18n.translate("尚未提问"), i18n.translate("尚未保存"), !state.activeChatSessionId);
   for (const session of orderedSessions) {
     const count = (session.scope_job_ids || []).length;
     const timestamp = session.updated_at || session.created_at;
@@ -806,7 +827,7 @@ function renderAnnotatedMessageBody(body, message) {
     marker.type = "button";
     marker.className = "chat-note-marker";
     marker.textContent = note.phrase;
-    marker.title = `打开「${note.phrase}」的标注笔记`;
+    marker.title = i18n.translate(`打开「${note.phrase}」的标注笔记`);
     marker.setAttribute("aria-label", marker.title);
     marker.addEventListener("click", () => openChatNotes(note.id));
     body.appendChild(marker);
@@ -835,11 +856,14 @@ async function selectSourcePassage(source, passage, button) {
   elements.sourcePlayerMedia.replaceChildren();
   const sourceJob = state.jobs.find((job) => job.id === source.job_id);
   const title = sourceJob ? meetingTitle(sourceJob) : source.filename;
-  elements.sourcePlayerMeeting.textContent = `${title || "会议主题未提取"} · ${source.filename}`;
+  elements.sourcePlayerMeeting.textContent = `${title || i18n.translate("会议主题未提取")} · ${source.filename}`;
   const mediaURL = `/api/jobs/${encodeURIComponent(source.job_id)}/source`;
   elements.sourcePlayerOriginal.href = mediaURL;
   const hasPassage = Boolean(passage);
-  let position = passage || { text: "暂无匹配的转写片段，从原片开头播放。", start_seconds: 0 };
+  let position = passage || {
+    text: i18n.translate("暂无匹配的转写片段，从原片开头播放。"),
+    start_seconds: 0,
+  };
   elements.sourcePlayerContext.textContent = position.text;
   if (hasPassage && !Number.isFinite(position.start_seconds)) {
     elements.sourcePlayerStatus.textContent = "正在从原始音视频定位这段话，首次定位可能需要等待…";
@@ -902,7 +926,7 @@ function renderSourceEvidence(sources) {
   const firstPassage = sources.flatMap((source) => source.passages || [])[0];
   preview.textContent = firstPassage
     ? `${sourceTimeRange(firstPassage)} · ${firstPassage.text}`
-    : "可查看完整原始文件";
+    : i18n.translate("可查看完整原始文件");
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = `查看原片与上下文 · ${count} 段 →`;
@@ -931,7 +955,7 @@ function openSourceEvidence(sources, trigger) {
     const time = document.createElement("span");
     time.textContent = passage ? sourceTimeRange(passage) : "无引用片段";
     const excerpt = document.createElement("small");
-    excerpt.textContent = passage?.text || "查看完整原始文件";
+    excerpt.textContent = passage?.text || i18n.translate("查看完整原始文件");
     button.append(title, time, excerpt);
     button.addEventListener("click", () => selectSourcePassage(source, passage, button));
     elements.sourcePlayerList.appendChild(button);
@@ -1025,7 +1049,8 @@ async function submitChat(event) {
       state.activeChatSessionId = session.id;
     }
     const updated = await requestJSON(`/api/chat/sessions/${encodeURIComponent(session.id)}/messages`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, language: uiLanguage }),
     });
     state.chatSessions = state.chatSessions.map((item) => item.id === updated.id ? updated : item);
   } catch (error) {
@@ -1135,7 +1160,8 @@ function renderChatNotes() {
   elements.chatNoteIpa.textContent = pronunciation?.ipa ? `${pronunciation.ipa}${pronunciation.language ? ` · ${pronunciation.language}` : ""}` : (isEnglishWord ? "音标暂不可用" : "");
   elements.chatNoteSpeak.disabled = !canSpeak;
   elements.chatNoteSpeak.title = canSpeak ? "播放英文发音" : "此浏览器不支持语音合成";
-  elements.chatNoteExcerpt.textContent = active.source_excerpt ? `原文：${active.source_excerpt}` : "";
+  elements.chatNoteExcerpt.textContent = active.source_excerpt
+    ? `${i18n.translate("原文：")}${active.source_excerpt}` : "";
   elements.chatNoteExchanges.replaceChildren();
   for (const exchange of active.exchanges || []) {
     const block = document.createElement("div");
@@ -1147,7 +1173,7 @@ function renderChatNotes() {
       block.appendChild(question);
     }
     const answer = document.createElement("p");
-    answer.textContent = exchange.answer || "暂无解释";
+    answer.textContent = exchange.answer || i18n.translate("暂无解释");
     block.appendChild(answer);
     const evidence = exchange.sources?.length ? exchange.sources : active.sources;
     if (evidence?.length) block.appendChild(renderSourceEvidence(evidence));
@@ -1212,7 +1238,9 @@ async function createChatNote() {
     const note = await requestJSON("/api/chat/notes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...selection, session_id: state.activeChatSessionId }),
+      body: JSON.stringify({
+        ...selection, session_id: state.activeChatSessionId, language: uiLanguage,
+      }),
     });
     state.chatNotes = [note, ...state.chatNotes.filter((item) => item.id !== note.id)];
     state.activeChatNoteId = note.id;
@@ -1243,7 +1271,7 @@ async function askChatNote(event) {
     const note = await requestJSON(`/api/chat/notes/${encodeURIComponent(noteId)}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, language: uiLanguage }),
     });
     state.chatNotes = [note, ...state.chatNotes.filter((item) => item.id !== note.id)];
     elements.chatNoteQuestion.value = "";
@@ -1328,7 +1356,7 @@ function renderReviewItem(job, item) {
   const original = document.createElement("p");
   original.className = "review-original";
   const prefix = document.createElement("span");
-  prefix.textContent = "附近上下文：";
+  prefix.textContent = i18n.translate("附近上下文：");
   original.appendChild(prefix);
   appendHighlightedContext(original, item.context_text, item.original_term, item.term_start);
   article.appendChild(original);
@@ -1336,7 +1364,7 @@ function renderReviewItem(job, item) {
   if (item.ocr_text.length) {
     const ocr = document.createElement("p");
     ocr.className = "review-ocr";
-    ocr.textContent = `画面 OCR：${item.ocr_text.join(" · ")}`;
+    ocr.textContent = `${i18n.translate("画面 OCR：")}${item.ocr_text.join(" · ")}`;
     article.appendChild(ocr);
   }
 
@@ -1696,7 +1724,9 @@ function renderJob(job) {
     if (!shouldExpand) card.querySelectorAll("audio").forEach((audio) => audio.pause());
   });
   const title = meetingTitle(job);
-  const createdAt = new Date(job.created_at).toLocaleString("zh-CN");
+  const createdAt = new Date(job.created_at).toLocaleString(
+    uiLanguage === "en" ? "en-US" : "zh-CN",
+  );
   $(".job-title strong", card).textContent = title || job.filename;
   $(".job-title span", card).textContent = title
     ? `${job.filename} · ${createdAt}` : createdAt;
@@ -1708,7 +1738,9 @@ function renderJob(job) {
   copyJobId.setAttribute("aria-label", `复制会议 ID：${job.id}`);
   copyJobId.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(`会议 ID：${job.id}`);
+      await navigator.clipboard.writeText(
+        `${uiLanguage === "en" ? "Meeting ID" : "会议 ID"}: ${job.id}`,
+      );
       copyJobId.textContent = "已复制会议 ID ✓";
     } catch {
       copyJobId.textContent = "复制失败";
@@ -1756,7 +1788,7 @@ function renderJob(job) {
         const response = await fetch(`/api/jobs/${job.id}/retry`, { method: "POST" });
         if (!response.ok) {
           const payload = await response.json();
-          throw new Error(payload.detail || "重新处理失败");
+          throw new Error(i18n.translate(payload.detail || "重新处理失败"));
         }
         await loadJobs();
         startPolling();
@@ -1986,7 +2018,9 @@ elements.chatSessionIdCopy.addEventListener("click", async () => {
   const session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
   if (!session) return;
   try {
-    await navigator.clipboard.writeText(`会话 ID：${session.id}`);
+    await navigator.clipboard.writeText(
+      `${uiLanguage === "en" ? "Chat ID" : "会话 ID"}: ${session.id}`,
+    );
     elements.chatSessionIdCopy.textContent = "已复制会话 ID ✓";
   } catch {
     elements.chatSessionIdCopy.textContent = "复制失败";
@@ -1996,7 +2030,7 @@ elements.chatSessionIdCopy.addEventListener("click", async () => {
 elements.chatRename.addEventListener("click", async () => {
   const session = state.chatSessions.find((item) => item.id === state.activeChatSessionId);
   if (!session) return;
-  const title = window.prompt("对话名称", session.title || "新对话");
+  const title = window.prompt(i18n.translate("对话名称"), session.title || i18n.translate("新对话"));
   if (!title?.trim()) return;
   try {
     const updated = await requestJSON(`/api/chat/sessions/${encodeURIComponent(session.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim() }) });
@@ -2006,7 +2040,7 @@ elements.chatRename.addEventListener("click", async () => {
 });
 elements.chatDelete.addEventListener("click", async () => {
   const id = state.activeChatSessionId;
-  if (!id || !window.confirm("删除这段已保存对话？此操作无法撤销。")) return;
+  if (!id || !window.confirm(i18n.translate("删除这段已保存对话？此操作无法撤销。"))) return;
   try {
     await requestJSON(`/api/chat/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
     state.chatSessions = state.chatSessions.filter((item) => item.id !== id);
@@ -2024,7 +2058,7 @@ elements.chatNoteSpeak.addEventListener("click", () => {
 });
 elements.chatNoteDelete.addEventListener("click", async () => {
   const id = state.activeChatNoteId;
-  if (!id || !window.confirm("删除这条标注笔记？此操作无法撤销。")) return;
+  if (!id || !window.confirm(i18n.translate("删除这条标注笔记？此操作无法撤销。"))) return;
   try {
     await requestJSON(`/api/chat/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
     state.chatNotes = state.chatNotes.filter((note) => note.id !== id);

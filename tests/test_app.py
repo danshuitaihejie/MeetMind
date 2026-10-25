@@ -109,8 +109,10 @@ def test_end_to_end_mock_pipeline(tmp_path: Path) -> None:
         job_id = response.json()["id"]
         job = client.get(f"/api/jobs/{job_id}").json()
         assert job["status"] == "completed"
+        assert job["language"] == "en"
         assert job["compressed_size_bytes"] > 0
         assert "MeetMind" in job["minutes"]
+        assert "Summary" in job["minutes"]
         assert len(job["minutes_versions"]) == 1
         assert job["minutes_versions"][0]["source"] == "initial"
         assert client.get(f"/api/jobs/{job_id}/audio").status_code == 200

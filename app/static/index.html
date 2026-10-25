@@ -1,50 +1,50 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
-    <title>MeetMind · 让会议只留下结论</title>
+    <meta name="description" content="MeetMind turns long meeting recordings into concise, searchable notes and transcripts." data-zh-content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
+    <title data-zh="MeetMind · 让会议只留下结论">MeetMind · Keep only the meeting takeaways</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/assets/styles.css?v=20261025-19" />
   </head>
   <body class="desktop-view-upload">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="MeetMind 首页">
+      <a class="brand" href="/" aria-label="MeetMind home" data-zh-aria-label="MeetMind 首页">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>MeetMind</span>
       </a>
       <div class="topbar-actions">
-        <button class="topbar-link hidden" id="newMeetingToggle" type="button">新建会议</button>
-        <a class="topbar-link" href="#chatSection" data-desktop-view="chat">问会议</a>
-        <a class="topbar-link topbar-notes-link" href="#chatNotesPanel" data-desktop-view="notes">标注笔记</a>
-        <a class="topbar-link" href="#jobsSection" data-desktop-view="jobs">处理记录</a>
+        <button class="topbar-link language-toggle" id="languageToggle" type="button" aria-label="Switch to Chinese" aria-pressed="false" data-zh-aria-label="切换为英文">中文</button>
+        <button class="topbar-link hidden" id="newMeetingToggle" type="button" data-zh="新建会议">New meeting</button>
+        <a class="topbar-link" href="#chatSection" data-desktop-view="chat" data-zh="问会议">Ask meetings</a>
+        <a class="topbar-link topbar-notes-link" href="#chatNotesPanel" data-desktop-view="notes" data-zh="标注笔记">Notes</a>
+        <a class="topbar-link" href="#jobsSection" data-desktop-view="jobs" data-zh="处理记录">Meeting records</a>
         <div class="system-status" id="systemStatus">
           <span class="status-dot"></span>
-          <span>正在检查服务</span>
+          <span data-zh="正在检查服务">Checking service</span>
         </div>
       </div>
     </header>
 
     <main>
-      <aside class="desktop-meeting-sidebar" aria-label="会议列表">
-        <header class="desktop-meeting-heading"><strong>会议列表</strong><span id="desktopMeetingCount"></span></header>
-        <nav class="desktop-meeting-list" id="desktopMeetingList" aria-label="选择会议"></nav>
+      <aside class="desktop-meeting-sidebar" aria-label="Meeting list" data-zh-aria-label="会议列表">
+        <header class="desktop-meeting-heading"><strong data-zh="会议列表">Meetings</strong><span id="desktopMeetingCount"></span></header>
+        <nav class="desktop-meeting-list" id="desktopMeetingList" aria-label="Select a meeting" data-zh-aria-label="选择会议"></nav>
       </aside>
       <section class="hero">
-        <p class="eyebrow">MEETING INTELLIGENCE · 01</p>
-        <h1>把漫长会议，<br /><em>压缩成清晰结论。</em></h1>
-        <p class="hero-copy">
-          上传视频或音频。MeetMind 会提取音轨、删除长静音并加速，
-          再将内容转写为可执行的会议纪要。
+        <p class="eyebrow" data-zh="会议智能 · 01">MEETING INTELLIGENCE · 01</p>
+        <h1><span data-zh="把漫长会议，">Turn long meetings,</span><br /><em data-zh="压缩成清晰结论。">into clear takeaways.</em></h1>
+        <p class="hero-copy" data-zh="上传视频或音频。MeetMind 会提取音轨、删除长静音并加速，再将内容转写为可执行的会议纪要。">
+          Upload audio or video. MeetMind extracts the audio, removes long silences, and speeds it up before turning it into actionable meeting notes.
         </p>
-        <div class="hero-metric" aria-label="示例压缩效果">
-          <div><strong>30:00</strong><span>原始会议</span></div>
-          <svg viewBox="0 0 120 18" role="img" aria-label="压缩到">
+        <div class="hero-metric" aria-label="Example audio reduction" data-zh-aria-label="示例压缩效果">
+          <div><strong>30:00</strong><span data-zh="原始会议">Original meeting</span></div>
+          <svg viewBox="0 0 120 18" role="img" aria-label="Reduced to" data-zh-aria-label="压缩到">
             <path d="M1 9h108" />
             <path d="m103 2 8 7-8 7" />
           </svg>
-          <div><strong>≤ 20:00</strong><span>送入 AI</span></div>
+          <div><strong>≤ 20:00</strong><span data-zh="送入 AI">Sent to AI</span></div>
         </div>
       </section>
 
@@ -53,8 +53,8 @@
           <div class="panel-heading">
             <span class="step-number">01</span>
             <div>
-              <p class="kicker">添加会议记录</p>
-              <h2 id="uploadTitle">上传音频或视频</h2>
+              <p class="kicker" data-zh="添加会议记录">ADD A MEETING</p>
+              <h2 id="uploadTitle" data-zh="上传音频或视频">Upload audio or video</h2>
             </div>
           </div>
 
@@ -66,8 +66,8 @@
               hidden
             />
             <span class="upload-icon" aria-hidden="true">↗</span>
-            <span class="drop-title" id="dropTitle">拖放文件到这里</span>
-            <span class="drop-hint" id="dropHint">或点击选择 · MP4 / MOV / MP3 / WAV / M4A</span>
+            <span class="drop-title" id="dropTitle" data-zh="拖放文件到这里">Drop a file here</span>
+            <span class="drop-hint" id="dropHint" data-zh="或点击选择 · MP4 / MOV / MP3 / WAV / M4A">or click to browse · MP4 / MOV / MP3 / WAV / M4A</span>
           </label>
 
           <div class="selected-file hidden" id="selectedFile">
@@ -76,24 +76,24 @@
               <strong id="fileName"></strong>
               <span id="fileInfo"></span>
             </div>
-            <button class="icon-button" id="removeFile" type="button" aria-label="移除文件">×</button>
+            <button class="icon-button" id="removeFile" type="button" aria-label="Remove file" data-zh-aria-label="移除文件">×</button>
           </div>
 
           <div class="settings-grid">
             <label class="field">
-              <span>压缩强度</span>
+              <span data-zh="压缩强度">Compression</span>
               <select id="speedSelect">
-                <option value="1">原速 · 优先准确率</option>
-                <option value="1.25">1.25× · 轻度压缩</option>
-                <option value="1.5" selected>1.5× · 推荐</option>
-                <option value="1.75">1.75× · 高效</option>
-                <option value="2">2× · 最短时长</option>
+                <option value="1" data-zh="原速 · 优先准确率">1× · Best accuracy</option>
+                <option value="1.25" data-zh="1.25× · 轻度压缩">1.25× · Light compression</option>
+                <option value="1.5" selected data-zh="1.5× · 推荐">1.5× · Recommended</option>
+                <option value="1.75" data-zh="1.75× · 高效">1.75× · Faster</option>
+                <option value="2" data-zh="2× · 最短时长">2× · Shortest duration</option>
               </select>
             </label>
             <label class="toggle-field">
               <span>
-                <strong>智能删除静音</strong>
-                <small>保留自然停顿，移除长空白</small>
+                <strong data-zh="智能删除静音">Remove silence</strong>
+                <small data-zh="保留自然停顿，移除长空白">Keep natural pauses and remove long silences</small>
               </span>
               <input id="trimSilence" type="checkbox" checked />
               <i aria-hidden="true"></i>
@@ -101,25 +101,25 @@
           </div>
 
           <label class="field context-field">
-            <span>会议背景 / 专有名词 <small>可选</small></span>
+            <span><span data-zh="会议背景 / 专有名词">Meeting context / terminology</span> <small data-zh="可选">Optional</small></span>
             <textarea
               id="contextInput"
               rows="3"
               maxlength="4000"
-              placeholder="例如：Q3 产品评审；涉及 MeetMind、Acme Cloud、RAG 等术语"
+              placeholder="e.g. Q3 product review; terms include MeetMind, Acme Cloud, and RAG" data-zh-placeholder="例如：Q3 产品评审；涉及 MeetMind、Acme Cloud、RAG 等术语"
             ></textarea>
           </label>
 
           <div class="estimate" id="estimate">
-            <span>预计 AI 音频时长</span>
-            <strong id="estimatedDuration">选择文件后计算</strong>
+            <span data-zh="预计 AI 音频时长">Estimated audio sent to AI</span>
+            <strong id="estimatedDuration" data-zh="选择文件后计算">Calculated after file selection</strong>
           </div>
 
           <button class="primary-button" id="submitButton" type="button" disabled>
-            <span>开始生成会议纪要</span><b aria-hidden="true">→</b>
+            <span data-zh="开始生成会议纪要">Generate meeting notes</span><b aria-hidden="true">→</b>
           </button>
           <div class="upload-progress hidden" id="uploadProgress" aria-live="polite">
-            <span id="uploadProgressText">正在上传 0%</span>
+            <span id="uploadProgressText" data-zh="正在上传">Uploading 0%</span>
             <i><b id="uploadProgressBar"></b></i>
           </div>
           <p class="form-error hidden" id="formError" role="alert"></p>
@@ -127,60 +127,60 @@
 
         <aside class="panel method-panel">
           <div class="panel-heading compact">
-            <span class="step-number">流程</span>
-            <div><p class="kicker">HOW IT WORKS</p><h2>四步生成，可选校对</h2></div>
+            <span class="step-number" data-zh="流程">STEPS</span>
+            <div><p class="kicker" data-zh="处理流程">HOW IT WORKS</p><h2 data-zh="四步生成，可选校对">Four steps, with optional review</h2></div>
           </div>
           <ol class="method-list">
-            <li><span>1</span><div><strong>提取音轨</strong><small>视频画面不会发送给 AI</small></div></li>
-            <li><span>2</span><div><strong>压缩时长</strong><small>删除静音并保音高加速</small></div></li>
-            <li><span>3</span><div><strong>语音转写</strong><small>识别中文、英文与专业术语</small></div></li>
-            <li><span>4</span><div><strong>整理纪要</strong><small>结论、讨论、行动项一目了然</small></div></li>
-            <li><span>+</span><div><strong>智能校对</strong><small>原速复听、本地 OCR 与人工修正</small></div></li>
+            <li><span>1</span><div><strong data-zh="提取音轨">Extract audio</strong><small data-zh="视频画面不会发送给 AI">Video frames are never sent to AI</small></div></li>
+            <li><span>2</span><div><strong data-zh="压缩时长">Shorten the recording</strong><small data-zh="删除静音并保音高加速">Remove silence and speed up without changing pitch</small></div></li>
+            <li><span>3</span><div><strong data-zh="语音转写">Transcribe speech</strong><small data-zh="识别中文、英文与专业术语">Recognize Chinese, English, and technical terms</small></div></li>
+            <li><span>4</span><div><strong data-zh="整理纪要">Organize the notes</strong><small data-zh="结论、讨论、行动项一目了然">Takeaways, discussion, and action items at a glance</small></div></li>
+            <li><span>+</span><div><strong data-zh="智能校对">Review and correct</strong><small data-zh="原速复听、本地 OCR 与人工修正">Replay at original speed, local OCR, and manual edits</small></div></li>
           </ol>
           <div class="privacy-note">
             <span aria-hidden="true">◉</span>
-            <p><strong>本地预处理</strong>视频先在服务器提取并压缩，只有压缩后的音频进入转写流程。</p>
+            <p><strong data-zh="本地预处理">Local preprocessing</strong><span data-zh="视频先在服务器提取并压缩，只有压缩后的音频进入转写流程。"> Video is processed and compressed on the server; only compressed audio enters transcription.</span></p>
           </div>
         </aside>
       </section>
 
       <section class="chat-section" id="chatSection" aria-labelledby="chatTitle">
         <div class="section-heading">
-          <div><p class="eyebrow">MEETING RECALL · 02</p><h2 id="chatTitle">问会议</h2></div>
+          <div><p class="eyebrow" data-zh="会议回顾 · 02">MEETING RECALL · 02</p><h2 id="chatTitle" data-zh="问会议">Ask your meetings</h2></div>
         </div>
         <div class="panel chat-panel">
-          <aside class="chat-history" aria-label="对话记录">
-            <div class="chat-history-heading"><strong>对话记录</strong><button class="chat-new" id="chatNew" type="button">＋ 新建对话</button></div>
-            <div class="chat-history-actions"><button class="chat-rename" id="chatRename" type="button" disabled>重命名</button><button class="chat-delete" id="chatDelete" type="button" disabled>删除</button></div>
+          <aside class="chat-history" aria-label="Chat history" data-zh-aria-label="对话记录">
+            <div class="chat-history-heading"><strong data-zh="对话记录">Chat history</strong><button class="chat-new" id="chatNew" type="button" data-zh="＋ 新建对话">＋ New chat</button></div>
+            <div class="chat-history-actions"><button class="chat-rename" id="chatRename" type="button" disabled data-zh="重命名">Rename</button><button class="chat-delete" id="chatDelete" type="button" disabled data-zh="删除">Delete</button></div>
             <div class="chat-session-id hidden" id="chatSessionId">
-              <div><span>会话 ID</span><button id="chatSessionIdCopy" type="button">复制会话 ID</button></div>
+              <div><span data-zh="会话 ID">Chat ID</span><button id="chatSessionIdCopy" type="button" data-zh="复制会话 ID">Copy chat ID</button></div>
               <code id="chatSessionIdValue"></code>
             </div>
-            <nav class="chat-session-list" id="chatSessionList" aria-label="已保存对话"></nav>
+            <nav class="chat-session-list" id="chatSessionList" aria-label="Saved chats" data-zh-aria-label="已保存对话"></nav>
           </aside>
           <div class="chat-workspace">
             <div class="chat-toolbar">
-            <span class="chat-scope-label" id="chatScopeLabel">查找范围</span>
+            <span class="chat-scope-label" id="chatScopeLabel" data-zh="查找范围">Search in</span>
             <details class="chat-scope" id="chatScope">
-              <summary id="chatScopeSummary" aria-labelledby="chatScopeLabel chatScopeSummary">已选 0 场会议</summary>
+              <summary id="chatScopeSummary" aria-labelledby="chatScopeLabel chatScopeSummary" data-zh="已选 0 场会议">0 meetings selected</summary>
               <div class="chat-scope-popover">
                 <div class="chat-scope-actions">
-                  <button id="chatSelectAll" type="button">全部会议</button>
-                  <button id="chatSelectNone" type="button">清空选择</button>
+                  <button id="chatSelectAll" type="button" data-zh="全部会议">All meetings</button>
+                  <button id="chatSelectNone" type="button" data-zh="清空选择">Clear selection</button>
                 </div>
                 <div class="chat-scope-options" id="chatScopeOptions" role="group" aria-labelledby="chatScopeLabel"></div>
               </div>
             </details>
-            <button class="chat-record-open" id="chatRecordOpen" type="button">选择处理记录 ↗</button>
-            <button class="chat-notes-toggle" id="chatNotesToggle" type="button" aria-controls="chatNotesPanel" aria-expanded="false">标注笔记 <span id="chatNotesCount"></span></button>
+            <button class="chat-record-open" id="chatRecordOpen" type="button" data-zh="选择处理记录 ↗">Choose a meeting record ↗</button>
+            <button class="chat-notes-toggle" id="chatNotesToggle" type="button" aria-controls="chatNotesPanel" aria-expanded="false"><span data-zh="标注笔记">Notes</span> <span id="chatNotesCount"></span></button>
             </div>
-            <p class="chat-hint" id="chatHint">从会议纪要和完整转写中查找依据，并列出参考会议。</p>
+            <p class="chat-hint" id="chatHint" data-zh="从会议纪要和完整转写中查找依据，并列出参考会议。">Find evidence in meeting notes and full transcripts, with references to the source meetings.</p>
             <div class="chat-messages" id="chatMessages" aria-live="polite"></div>
             <form class="chat-form" id="chatForm">
-              <label for="chatQuestion">你的问题</label>
+              <label for="chatQuestion" data-zh="你的问题">Your question</label>
               <div class="chat-compose">
-                <textarea id="chatQuestion" rows="2" maxlength="2000" placeholder="例如：上次讨论的上线时间和负责人是谁？"></textarea>
-                <button id="chatSend" type="submit">发送 →</button>
+                <textarea id="chatQuestion" rows="2" maxlength="2000" placeholder="e.g. What launch date and owner did we discuss last time?" data-zh-placeholder="例如：上次讨论的上线时间和负责人是谁？"></textarea>
+                <button id="chatSend" type="submit" data-zh="发送 →">Send →</button>
               </div>
               <p class="chat-error hidden" id="chatError" role="alert"></p>
             </form>
@@ -188,31 +188,31 @@
         </div>
       </section>
 
-      <button class="chat-selection-action hidden" id="chatSelectionAction" type="button" aria-keyshortcuts="Control+Enter" title="解释并标记所选词语（Ctrl+Enter）">解释并标记</button>
+      <button class="chat-selection-action hidden" id="chatSelectionAction" type="button" aria-keyshortcuts="Control+Enter" title="Explain and annotate the selected text (Ctrl+Enter)" data-zh-title="解释并标记所选词语（Ctrl+Enter）" data-zh="解释并标记">Explain & annotate</button>
       <section class="chat-notes-panel hidden" id="chatNotesPanel" aria-labelledby="chatNotesTitle">
         <div class="chat-notes-heading">
-          <div><p class="kicker">ANNOTATIONS</p><h2 id="chatNotesTitle">标注笔记</h2></div>
-          <button class="chat-notes-close" id="chatNotesClose" type="button">← 返回问会议</button>
+          <div><p class="kicker" data-zh="标注">ANNOTATIONS</p><h2 id="chatNotesTitle" data-zh="标注笔记">Notes</h2></div>
+          <button class="chat-notes-close" id="chatNotesClose" type="button" data-zh="← 返回问会议">← Back to chat</button>
         </div>
         <div class="chat-notes-layout">
-          <aside class="chat-notes-sidebar" aria-label="标注列表">
+          <aside class="chat-notes-sidebar" aria-label="Annotations" data-zh-aria-label="标注列表">
             <p class="chat-notes-status" id="chatNotesStatus" role="status"></p>
-            <nav class="chat-notes-list" id="chatNotesList" aria-label="已保存的标注"></nav>
+            <nav class="chat-notes-list" id="chatNotesList" aria-label="Saved annotations" data-zh-aria-label="已保存的标注"></nav>
           </aside>
           <div class="chat-notes-workspace">
-            <p class="chat-notes-intro">选择对话里的词或短语，可以结合会议内容解释，并在这里继续追问。</p>
-            <section class="chat-note-detail hidden" id="chatNoteDetail" aria-label="标注详情">
+            <p class="chat-notes-intro" data-zh="选择对话里的词或短语，可以结合会议内容解释，并在这里继续追问。">Select a word or phrase in a chat to explain it using meeting context, then ask follow-up questions here.</p>
+            <section class="chat-note-detail hidden" id="chatNoteDetail" aria-label="Annotation details" data-zh-aria-label="标注详情">
               <h3 id="chatNotePhrase"></h3>
-              <div class="chat-note-pronunciation hidden" id="chatNotePronunciation"><span id="chatNoteIpa"></span><button type="button" id="chatNoteSpeak" aria-label="播放英文发音">🔊</button></div>
+              <div class="chat-note-pronunciation hidden" id="chatNotePronunciation"><span id="chatNoteIpa"></span><button type="button" id="chatNoteSpeak" aria-label="Play English pronunciation" data-zh-aria-label="播放英文发音">🔊</button></div>
               <p class="chat-note-excerpt" id="chatNoteExcerpt"></p>
               <div class="chat-note-exchanges" id="chatNoteExchanges"></div>
-              <button class="chat-note-delete" id="chatNoteDelete" type="button">删除标注</button>
+              <button class="chat-note-delete" id="chatNoteDelete" type="button" data-zh="删除标注">Delete annotation</button>
             </section>
             <p class="chat-notes-error hidden" id="chatNotesError" role="alert"></p>
             <form class="chat-note-form hidden" id="chatNoteForm">
-              <label for="chatNoteQuestion">继续追问</label>
-              <textarea id="chatNoteQuestion" rows="2" maxlength="2000" placeholder="例如：它在这次会议中具体指什么？"></textarea>
-              <button id="chatNoteAsk" type="submit">提问 →</button>
+              <label for="chatNoteQuestion" data-zh="继续追问">Follow-up question</label>
+              <textarea id="chatNoteQuestion" rows="2" maxlength="2000" placeholder="e.g. What does this refer to in this meeting?" data-zh-placeholder="例如：它在这次会议中具体指什么？"></textarea>
+              <button id="chatNoteAsk" type="submit" data-zh="提问 →">Ask →</button>
             </form>
           </div>
         </div>
@@ -220,32 +220,32 @@
 
       <section class="source-player-panel hidden" id="sourcePlayer" aria-labelledby="sourcePlayerTitle">
         <div class="source-player-heading">
-          <div><p class="kicker">SOURCE RECORDING</p><h2 id="sourcePlayerTitle">原片回顾</h2></div>
-          <button type="button" id="sourcePlayerClose">← 返回对话</button>
+          <div><p class="kicker" data-zh="原始录制">SOURCE RECORDING</p><h2 id="sourcePlayerTitle" data-zh="原片回顾">Source recording</h2></div>
+          <button type="button" id="sourcePlayerClose" data-zh="← 返回对话">← Back to chat</button>
         </div>
         <div class="source-player-layout">
-          <aside class="source-player-sidebar" aria-label="原始片段列表">
-            <strong>相关片段</strong>
-            <nav id="sourcePlayerList" aria-label="选择原始片段"></nav>
+          <aside class="source-player-sidebar" aria-label="Related clips" data-zh-aria-label="原始片段列表">
+            <strong data-zh="相关片段">Related clips</strong>
+            <nav id="sourcePlayerList" aria-label="Select a source clip" data-zh-aria-label="选择原始片段"></nav>
           </aside>
           <div class="source-player-workspace">
             <h3 id="sourcePlayerMeeting"></h3>
             <p id="sourcePlayerContext"></p>
             <p class="source-player-status" id="sourcePlayerStatus" role="status"></p>
             <div id="sourcePlayerMedia"></div>
-            <a id="sourcePlayerOriginal" target="_blank" rel="noopener">打开完整原始文件</a>
+            <a id="sourcePlayerOriginal" target="_blank" rel="noopener" data-zh="打开完整原始文件">Open full source file</a>
           </div>
         </div>
       </section>
 
       <section class="jobs-section" id="jobsSection" aria-labelledby="jobsTitle">
         <div class="section-heading">
-          <div><p class="eyebrow">PROCESSING DESK · 03</p><h2 id="jobsTitle">处理记录</h2></div>
-          <button class="text-button" id="refreshJobs" type="button">刷新 ↻</button>
+          <div><p class="eyebrow" data-zh="处理工作台 · 03">PROCESSING DESK · 03</p><h2 id="jobsTitle" data-zh="处理记录">Meeting records</h2></div>
+          <button class="text-button" id="refreshJobs" type="button" data-zh="刷新 ↻">Refresh ↻</button>
         </div>
         <div class="empty-state" id="emptyState">
-          <span>还没有会议记录</span>
-          <p>上传第一个文件后，处理进度和结果会显示在这里。</p>
+          <span data-zh="还没有会议记录">No meeting records yet</span>
+          <p data-zh="上传第一个文件后，处理进度和结果会显示在这里。">Upload your first file to see its progress and results here.</p>
         </div>
         <div class="jobs-list" id="jobsList"></div>
       </section>
@@ -257,26 +257,26 @@
           <div class="job-file-icon">AU</div>
           <div class="job-title">
             <strong></strong><span></span>
-            <div class="job-id"><code></code><button type="button">复制 ID</button></div>
+            <div class="job-id"><code></code><button type="button" data-zh="复制 ID">Copy ID</button></div>
           </div>
           <div class="job-state"><i></i><span></span></div>
-          <button class="job-chat" type="button" aria-label="询问这场会议" title="询问这场会议">
+          <button class="job-chat" type="button" aria-label="Ask about this meeting" title="Ask about this meeting" data-zh-aria-label="询问这场会议" data-zh-title="询问这场会议">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
               <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5c-1.2 0-2.3-.3-3.3-.8L4 20l1.8-5.2a7.5 7.5 0 1 1 14.2-3.3Z" />
               <path d="M8.5 11.5h8" />
             </svg>
           </button>
           <button class="job-toggle" type="button" aria-expanded="false">
-            <span>展开</span><b aria-hidden="true">⌄</b>
+            <span data-zh="展开">Expand</span><b aria-hidden="true">⌄</b>
           </button>
         </div>
         <div class="job-details">
           <div class="job-progress"><i><b></b></i><span></span></div>
           <div class="job-metrics"></div>
           <p class="job-error hidden"></p>
-          <button class="retry-button hidden" type="button">重新处理 ↻</button>
+          <button class="retry-button hidden" type="button" data-zh="重新处理 ↻">Retry processing ↻</button>
           <details class="usage-panel">
-            <summary>AI 用量</summary>
+            <summary data-zh="AI 用量">AI usage</summary>
             <div class="usage-content">
               <div class="usage-summary"></div>
               <p class="usage-note"></p>
@@ -286,74 +286,74 @@
           <div class="job-content-grid hidden">
             <div class="job-results hidden">
               <div class="result-tabs">
-                <button type="button" class="active" data-tab="minutes">会议纪要</button>
-                <button type="button" data-tab="transcript">完整转写</button>
+                <button type="button" class="active" data-tab="minutes" data-zh="会议纪要">Meeting notes</button>
+                <button type="button" data-tab="transcript" data-zh="完整转写">Full transcript</button>
               </div>
               <div class="result-version-tools hidden">
-                <label>纪要版本 <select class="result-version-select" aria-label="选择纪要版本"></select></label>
-                <button class="compare-toggle" type="button" aria-pressed="false">对比首次版与最新版差异</button>
+                <label><span data-zh="纪要版本">Notes version</span> <select class="result-version-select" aria-label="Select notes version" data-zh-aria-label="选择纪要版本"></select></label>
+                <button class="compare-toggle" type="button" aria-pressed="false" data-zh="对比首次版与最新版差异">Compare the first and latest versions</button>
               </div>
               <div class="result-content"></div>
               <div class="result-compare hidden">
                 <section class="compare-column">
-                  <div class="compare-heading"><strong class="compare-first-title"></strong><a class="compare-first-download">下载</a></div>
+                  <div class="compare-heading"><strong class="compare-first-title"></strong><a class="compare-first-download" data-zh="下载">Download</a></div>
                 </section>
                 <section class="compare-column">
-                  <div class="compare-heading"><strong class="compare-latest-title"></strong><a class="compare-latest-download">下载</a></div>
+                  <div class="compare-heading"><strong class="compare-latest-title"></strong><a class="compare-latest-download" data-zh="下载">Download</a></div>
                 </section>
                 <p class="compare-status" aria-live="polite"></p>
-                <div class="compare-diff" aria-label="纪要版本差异"></div>
+                <div class="compare-diff" aria-label="Notes version differences" data-zh-aria-label="纪要版本差异"></div>
               </div>
               <div class="result-actions">
-                <button class="ask-meeting" type="button">询问这场会议</button>
-                <button class="copy-button" type="button">复制内容</button>
-                <a data-download="minutes">下载纪要</a>
-                <a data-download="audio">下载压缩音频</a>
+                <button class="ask-meeting" type="button" data-zh="询问这场会议">Ask about this meeting</button>
+                <button class="copy-button" type="button" data-zh="复制内容">Copy</button>
+                <a data-download="minutes" data-zh="下载纪要">Download notes</a>
+                <a data-download="audio" data-zh="下载压缩音频">Download compressed audio</a>
               </div>
             </div>
             <div class="review-panel hidden">
               <div class="review-heading">
                 <div>
-                  <span>ENHANCED REVIEW</span>
-                  <strong>不确定文字校对</strong>
+                  <span data-zh="智能校对">ENHANCED REVIEW</span>
+                  <strong data-zh="不确定文字校对">Review uncertain words</strong>
                 </div>
-                <button class="review-start" type="button">智能校对：OCR + 原声</button>
+                <button class="review-start" type="button" data-zh="智能校对：OCR + 原声">Smart review: OCR + original audio</button>
               </div>
-              <p class="review-description">
-                你也可以主动纠偏 AI 没标出的词：启动校对后，在下方搜索原词并选择准确位置。视频画面仅在本地 OCR；置信度为 AI 交叉校验估值。
+              <p class="review-description" data-zh="你也可以主动纠偏 AI 没标出的词：启动校对后，在下方搜索原词并选择准确位置。视频画面仅在本地 OCR；置信度为 AI 交叉校验估值。">
+                You can also correct words AI did not flag. Start review, search for the original word below, and select the right occurrence. Video frames are processed with local OCR; confidence is estimated through AI cross-checking.
               </p>
               <div class="review-progress hidden"><i><b></b></i><span></span></div>
               <p class="review-error hidden"></p>
               <section class="manual-review hidden">
                 <div class="manual-review-heading">
-                  <strong>主动纠偏：修正 AI 没标出的词</strong>
-                  <span>不限置信度</span>
+                  <strong data-zh="主动纠偏：修正 AI 没标出的词">Manual correction: fix words AI missed</strong>
+                  <span data-zh="不限置信度">Any confidence level</span>
                 </div>
-                <p>输入转写中的原词和正确写法，再勾选一处、多处或全选当前结果。每次搜索最多显示前 30 处。</p>
+                <p data-zh="输入转写中的原词和正确写法，再勾选一处、多处或全选当前结果。每次搜索最多显示前 30 处。">Enter the original and corrected words, then select one or more occurrences. Each search shows up to 30 matches.</p>
                 <form class="manual-review-form">
                   <label>
-                    <span>原词 / 短语</span>
+                    <span data-zh="原词 / 短语">Original word / phrase</span>
                     <input class="manual-original" type="text" maxlength="100" autocomplete="off">
                   </label>
                   <label>
-                    <span>修改为</span>
+                    <span data-zh="修改为">Replace with</span>
                     <input class="manual-replacement" type="text" maxlength="100" autocomplete="off">
                   </label>
-                  <button type="submit">查找位置</button>
+                  <button type="submit" data-zh="查找位置">Find matches</button>
                 </form>
                 <p class="manual-review-error hidden"></p>
                 <div class="manual-review-results"></div>
                 <div class="manual-review-pending"></div>
               </section>
               <div class="review-list-heading hidden">
-                <strong>疑似词</strong>
+                <strong data-zh="疑似词">Suspected words</strong>
                 <button class="review-fill-all hidden" type="button"></button>
               </div>
               <div class="review-list"></div>
-              <p class="review-description">
-                “一键填入”只填写普通 AI 建议，不包含两版转写冲突，也不会保存。请逐项核对冲突词；检查或修改后，再点击下方按钮应用修正并重新生成纪要。
+              <p class="review-description" data-zh="“一键填入”只填写普通 AI 建议，不包含两版转写冲突，也不会保存。请逐项核对冲突词；检查或修改后，再点击下方按钮应用修正并重新生成纪要。">
+                “Fill all” only applies standard AI suggestions. It excludes conflicts between transcript versions and does not save them. Review each conflict, then apply your corrections and regenerate the notes.
               </p>
-              <button class="review-apply hidden" type="button">应用以上修正并重新生成纪要 →</button>
+              <button class="review-apply hidden" type="button" data-zh="应用以上修正并重新生成纪要 →">Apply corrections and regenerate notes →</button>
             </div>
           </div>
         </div>
@@ -362,9 +362,10 @@
 
     <footer>
       <span>MeetMind</span>
-      <p>更少回放，更多推进。</p>
+      <p data-zh="更少回放，更多推进。">Less replay. More progress.</p>
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
-    <script src="/assets/app.js?v=20261025-21" defer></script>
+    <script src="/assets/i18n.js?v=20261025-2" defer></script>
+    <script src="/assets/app.js?v=20261025-22" defer></script>
   </body>
 </html>

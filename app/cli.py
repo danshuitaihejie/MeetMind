@@ -51,6 +51,7 @@ def _parser() -> JSONArgumentParser:
     process = commands.add_parser("process", help="同步处理本地音视频文件")
     process.add_argument("file", type=Path)
     process.add_argument("--speed", type=float, choices=SPEED_OPTIONS, default=1.5)
+    process.add_argument("--language", choices=("en", "zh"), default="en")
     process.add_argument("--no-trim-silence", action="store_true")
     context = process.add_mutually_exclusive_group()
     context.add_argument("--context", default="", help="会议背景文字")
@@ -158,6 +159,7 @@ def _process(args: argparse.Namespace, settings: Settings, store: JobStore) -> J
             speed=args.speed,
             trim_silence=not args.no_trim_silence,
             context=context.strip(),
+            language=args.language,
             original_size_bytes=source.stat().st_size,
         ))
     except Exception:

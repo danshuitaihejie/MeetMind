@@ -104,6 +104,7 @@ class ChatTurn(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    language: Literal["en", "zh"] = "en"
     job_id: str | None = None
     job_ids: list[str] | None = Field(default=None, max_length=100)
     history: list[ChatTurn] = Field(default_factory=list, max_length=10)
@@ -138,6 +139,7 @@ class ChatSessionCreate(BaseModel):
 
 class ChatSessionQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    language: Literal["en", "zh"] = "en"
 
 
 class ChatSessionUpdate(BaseModel):
@@ -171,6 +173,7 @@ class ChatPronunciation(BaseModel):
 
 class ChatNoteCreate(BaseModel):
     phrase: str = Field(min_length=1, max_length=100)
+    language: Literal["en", "zh"] = "en"
     source_excerpt: str = Field(min_length=1, max_length=500)
     scope_job_ids: list[str] = Field(min_length=1, max_length=500)
     message_id: str = Field(min_length=1, max_length=100)
@@ -190,6 +193,7 @@ class ChatNoteCreate(BaseModel):
 
 class ChatNoteQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    language: Literal["en", "zh"] = "en"
 
 
 class ChatNoteExchange(BaseModel):
@@ -256,6 +260,7 @@ class MinutesVersion(BaseModel):
 class Job(BaseModel):
     id: str
     filename: str
+    language: Literal["en", "zh"] = "zh"
     content_type: str | None = None
     status: JobStatus = JobStatus.queued
     stage: str = "等待处理"

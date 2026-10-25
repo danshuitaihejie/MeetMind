@@ -68,7 +68,7 @@ def test_usage_accumulates_across_retry_review_and_regeneration(
     with TestClient(app) as client, sample.open("rb") as audio:
         created = client.post(
             "/api/jobs", files={"file": ("sample.wav", audio, "audio/wav")},
-            data={"speed": "1", "trim_silence": "false"},
+            data={"speed": "1", "trim_silence": "false", "language": "zh"},
         ).json()
         job_id = created["id"]
         failed = client.get(f"/api/jobs/{job_id}").json()

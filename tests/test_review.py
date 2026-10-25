@@ -67,6 +67,9 @@ def test_agent_flag_correction_targets_selected_occurrence(tmp_path: Path) -> No
     (store.job_dir("repeated") / "transcript.txt").write_text("项目和项目", encoding="utf-8")
 
     class SummaryAI:
+        def with_language(self, language):
+            return self
+
         def with_usage_recorder(self, recorder, operation_override=None):
             return self
 
@@ -238,6 +241,9 @@ def test_review_uses_later_video_frame_for_asr_conflict(tmp_path: Path) -> None:
             return True
 
     class AI:
+        def with_language(self, language):
+            return self
+
         def with_usage_recorder(self, recorder):
             return self
 
@@ -281,6 +287,9 @@ def test_review_uses_later_video_frame_for_asr_conflict(tmp_path: Path) -> None:
     assert store.get("pitch-video").transcript == "我有一个 skill pitch me"
 
     class SummaryAI:
+        def with_language(self, language):
+            return self
+
         def with_usage_recorder(self, recorder, operation_override=None):
             return self
 

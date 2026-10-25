@@ -374,6 +374,7 @@ def test_chat_note_persists_and_supports_follow_up(tmp_path: Path) -> None:
     app.state.store.create(meeting("two", "# 发布会", "周五发布"))
     payload = {
         "phrase": "苍鹭计划",
+        "language": "zh",
         "source_excerpt": "苍鹭计划预算由林工负责",
         "scope_job_ids": ["one", "two"],
         "message_id": "message-1",

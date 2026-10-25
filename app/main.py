@@ -4,7 +4,7 @@ import mimetypes
 import shutil
 import uuid
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -109,13 +109,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         question: str,
         jobs: list[Job],
         exchanges: list[ChatNoteExchange],
+        language: str = "en",
     ) -> tuple[str, list[ChatSource], ChatPronunciation | None]:
         search = ChatRequest(question=f"{phrase} {source_excerpt} {question}"[:2000])
         context, sources, retrieved = build_context(jobs, search)
         note_ai = (
             ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
             if len(jobs) == 1 else ai.with_usage_recorder(store.record_chat_usage)
-        )
+        ).with_language(language)
         try:
             answer, pronunciation = note_ai.explain_meeting_phrase(
                 phrase, source_excerpt, question, context, exchanges, retrieved=retrieved,
@@ -129,13 +130,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return answer, sources, pronunciation
 
-    def answer_chat(question: str, jobs: list[Job], history: list[ChatTurn]) -> ChatResponse:
+    def answer_chat(
+        question: str, jobs: list[Job], history: list[ChatTurn], language: str = "en",
+    ) -> ChatResponse:
         request = ChatRequest(question=question, history=history)
         context, sources, retrieved = build_context(jobs, request)
         chat_ai = (
             ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
             if len(jobs) == 1 else ai.with_usage_recorder(store.record_chat_usage)
-        )
+        ).with_language(language)
         try:
             answer = chat_ai.answer_meeting_question(
                 question, context, history, retrieved=retrieved,
@@ -181,7 +184,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else [request.job_id] if request.job_id is not None else None
         )
         jobs = resolve_chat_jobs(selected_ids)
-        return answer_chat(question, jobs, request.history)
+        return answer_chat(question, jobs, request.history, request.language)
 
     @app.get("/api/chat/sessions", response_model=list[ChatSession])
     def list_chat_sessions() -> list[ChatSession]:
@@ -213,7 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ChatTurn(role=message.role, content=message.content[:4000])
             for message in session.messages[-10:]
         ]
-        result = answer_chat(question, jobs, history)
+        result = answer_chat(question, jobs, history, request.language)
         user_message = ChatSessionMessage(role="user", content=question)
         assistant_message = ChatSessionMessage(
             role="assistant", content=result.answer,
@@ -225,7 +228,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             title_ai = (
                 ai.with_usage_recorder(lambda call: store.record_usage(jobs[0].id, call))
                 if len(jobs) == 1 else ai.with_usage_recorder(store.record_chat_usage)
-            )
+            ).with_language(request.language)
             try:
                 title = title_ai.generate_chat_title(
                     [*session.messages, user_message, assistant_message],
@@ -274,7 +277,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="请选择要标注的词语")
         scope_job_ids = list(dict.fromkeys(request.scope_job_ids))
         jobs = resolve_chat_jobs(scope_job_ids)
-        question = "请解释这个词或短语的通常含义，以及在所选会议中的具体含义。"
+        question = (
+            "Explain this phrase's general meaning and its meaning in the selected meeting."
+            if request.language == "en" else
+            "请解释这个词或短语的通常含义，以及在所选会议中的具体含义。"
+        )
         if request.session_id is not None:
             session = session_store.get(request.session_id)
             if session is None:
@@ -288,7 +295,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 request.selection_start:request.selection_end
             ] != phrase or excerpt not in message.content:
                 raise HTTPException(status_code=422, detail="标注内容与对话不一致")
-        answer, sources, pronunciation = explain_note(phrase, excerpt, question, jobs, [])
+        answer, sources, pronunciation = explain_note(
+            phrase, excerpt, question, jobs, [], request.language,
+        )
         note = ChatNote(
             phrase=phrase,
             source_excerpt=excerpt,
@@ -297,7 +306,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_id=request.session_id,
             selection_start=request.selection_start,
             selection_end=request.selection_end,
-            exchanges=[ChatNoteExchange(question="释义", answer=answer, sources=sources)],
+            exchanges=[ChatNoteExchange(
+                question="Explanation" if request.language == "en" else "释义",
+                answer=answer, sources=sources,
+            )],
             sources=sources,
             pronunciation=pronunciation,
         )
@@ -316,6 +328,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         jobs = resolve_chat_jobs(note.scope_job_ids)
         answer, sources, _ = explain_note(
             note.phrase, note.source_excerpt, question, jobs, note.exchanges,
+            request.language,
         )
         try:
             return note_store.add_exchange(
@@ -345,6 +358,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         speed: Annotated[float, Form()] = 1.5,
         trim_silence: Annotated[bool, Form()] = True,
         context: Annotated[str, Form()] = "",
+        language: Annotated[Literal["en", "zh"], Form()] = "en",
     ) -> Job:
         if not media.available():
             raise HTTPException(status_code=503, detail="服务器未安装 FFmpeg/FFprobe")
@@ -384,6 +398,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             speed=speed,
             trim_silence=trim_silence,
             context=context.strip(),
+            language=language,
             original_size_bytes=size,
         )
         store.create(job)
