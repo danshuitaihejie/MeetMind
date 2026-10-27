@@ -96,6 +96,7 @@ const elements = {
   chatNotesList: $("#chatNotesList"),
   chatNoteDetail: $("#chatNoteDetail"),
   chatNotePhrase: $("#chatNotePhrase"),
+  chatNoteTimestamp: $("#chatNoteTimestamp"),
   chatNoteDelete: $("#chatNoteDelete"),
   chatNotePronunciation: $("#chatNotePronunciation"),
   chatNoteIpa: $("#chatNoteIpa"),
@@ -127,6 +128,16 @@ function formatDuration(totalSeconds) {
   return hours
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
     : `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+function formatTimestamp(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(uiLanguage === "en" ? "en-US" : "zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZone: "Asia/Shanghai",
+  });
 }
 
 function setError(message = "") {
@@ -770,11 +781,7 @@ function renderChatSessions() {
   addItem(null, i18n.translate("新对话"), i18n.translate("尚未提问"), i18n.translate("尚未保存"), !state.activeChatSessionId);
   for (const session of orderedSessions) {
     const count = (session.scope_job_ids || []).length;
-    const timestamp = session.updated_at || session.created_at;
-    const date = timestamp ? new Date(timestamp) : null;
-    const time = date && !Number.isNaN(date.getTime())
-      ? `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
-      : "";
+    const time = formatTimestamp(session.updated_at || session.created_at);
     const firstQuestion = session.messages?.find((message) => message.role === "user")?.content || "";
     const titleSource = session.title_is_manual
       ? "自定义" : session.title_generated_by_ai ? "AI 生成" : "";
@@ -999,7 +1006,16 @@ function renderChatMessages() {
     article.className = `chat-message ${message.role === "user" ? "from-user" : "from-assistant"}`;
     const label = document.createElement("span");
     label.className = "chat-message-label";
-    label.textContent = message.role === "user" ? "你" : "MeetMind";
+    const speaker = document.createElement("span");
+    speaker.textContent = message.role === "user" ? i18n.translate("你") : "MeetMind";
+    label.appendChild(speaker);
+    const messageTime = formatTimestamp(message.created_at);
+    if (messageTime) {
+      const time = document.createElement("time");
+      time.dateTime = message.created_at;
+      time.textContent = messageTime;
+      label.appendChild(time);
+    }
     const body = document.createElement("div");
     body.className = "chat-message-body";
     body.dataset.messageId = message.id;
@@ -1141,6 +1157,13 @@ function renderChatNotes() {
     const summary = document.createElement("span");
     summary.textContent = note.exchanges?.at(-1)?.answer?.slice(0, 100) || "等待解释";
     button.append(phrase, summary);
+    const updated = formatTimestamp(note.updated_at || note.created_at);
+    if (updated) {
+      const time = document.createElement("time");
+      time.dateTime = note.updated_at || note.created_at;
+      time.textContent = updated;
+      button.appendChild(time);
+    }
     button.addEventListener("click", () => openChatNotes(note.id));
     elements.chatNotesList.appendChild(button);
   }
@@ -1153,6 +1176,14 @@ function renderChatNotes() {
   elements.chatNotesPanel.classList.toggle("has-active-note", Boolean(active));
   if (!active) return;
   elements.chatNotePhrase.textContent = active.phrase;
+  const created = formatTimestamp(active.created_at);
+  const updated = formatTimestamp(active.updated_at);
+  elements.chatNoteTimestamp.textContent = [
+    created ? `${uiLanguage === "en" ? "Created" : "创建于"} ${created}` : "",
+    updated && updated !== created
+      ? `${uiLanguage === "en" ? "Updated" : "更新于"} ${updated}` : "",
+  ].filter(Boolean).join(" · ");
+  elements.chatNoteTimestamp.classList.toggle("hidden", !elements.chatNoteTimestamp.textContent);
   const pronunciation = active.pronunciation;
   const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
   const isEnglishWord = /^[A-Za-z]+(?:['’-][A-Za-z]+)?$/.test(active.phrase.trim());
@@ -1175,6 +1206,13 @@ function renderChatNotes() {
     const answer = document.createElement("p");
     answer.textContent = exchange.answer || i18n.translate("暂无解释");
     block.appendChild(answer);
+    const exchangeTime = formatTimestamp(exchange.created_at);
+    if (exchangeTime) {
+      const time = document.createElement("time");
+      time.dateTime = exchange.created_at;
+      time.textContent = exchangeTime;
+      block.appendChild(time);
+    }
     const evidence = exchange.sources?.length ? exchange.sources : active.sources;
     if (evidence?.length) block.appendChild(renderSourceEvidence(evidence));
     elements.chatNoteExchanges.appendChild(block);

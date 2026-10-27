@@ -198,8 +198,9 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 .chat-empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; }
 .chat-message { flex: none; max-width: min(88%, 790px); }
 .chat-message.from-user { align-self: flex-end; }
-.chat-message-label { display: block; margin-bottom: 7px; color: var(--muted); font: 700 10px ui-monospace, monospace; }
-.chat-message.from-user .chat-message-label { text-align: right; }
+.chat-message-label { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; color: var(--muted); font: 700 10px ui-monospace, monospace; }
+.chat-message-label time { font-weight: 400; }
+.chat-message.from-user .chat-message-label { justify-content: flex-end; }
 .chat-message-body { padding: 14px 17px; background: var(--white); border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; }
 .chat-message.from-user .chat-message-body { background: var(--ink); border-color: var(--ink); color: var(--white); }
 .chat-note-marker { display: inline; padding: 0 1px; border: 0; border-bottom: 2px solid var(--accent); border-radius: 0; background: #ffdd9d; color: #41250d; font: inherit; font-weight: 700; line-height: inherit; cursor: pointer; white-space: pre-wrap; }
@@ -222,8 +223,10 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 .chat-notes-item strong, .chat-notes-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-notes-item strong { font-size: 11px; }
 .chat-notes-item span { margin-top: 7px; color: var(--muted); font-size: 10px; }
+.chat-notes-item time { display: block; margin-top: 7px; color: var(--muted); font-size: 10px; }
 .chat-note-detail { min-height: 0; flex: 1; padding: 8px 8px 12px 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-note-detail h3 { margin: 0; font: 400 23px Georgia, "Songti SC", serif; overflow-wrap: anywhere; }
+.chat-note-timestamp { margin: 8px 0 0; color: var(--muted); font-size: 10px; }
 .chat-note-pronunciation { display: flex; align-items: center; gap: 10px; margin-top: 8px; color: var(--muted); font: 13px ui-monospace, monospace; }
 .chat-note-pronunciation button { width: 32px; height: 30px; border: 1px solid var(--line); background: var(--white); cursor: pointer; }
 .chat-note-pronunciation button:disabled { opacity: .45; cursor: not-allowed; }
@@ -232,6 +235,7 @@ body.has-jobs .jobs-section { margin-top: 64px; }
 .chat-note-exchanges { display: grid; gap: 10px; }
 .chat-note-exchange { padding: 13px; border-left: 2px solid var(--accent); background: #f8f5ee; }
 .chat-note-exchange p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
+.chat-note-exchange time { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; }
 .chat-note-exchange .chat-note-exchange-question { margin-bottom: 8px; color: var(--accent-dark); font-weight: 700; }
 .chat-note-sources { margin: 3px 0; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .chat-note-form { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 12px -24px 0; padding: 13px 24px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--white); }
