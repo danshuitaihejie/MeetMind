@@ -156,3 +156,7 @@ uv run ruff check .
 ```
 
 Tests use a local mock AI and do not spend API credits.
+
+## License
+
+MeetMind is licensed under the [MIT License](LICENSE).
