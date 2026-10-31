@@ -40,6 +40,58 @@ def _load_segments(path: Path) -> list[TranscriptSegment]:
     return [TranscriptSegment.model_validate(item) for item in payload]
 
 
+def _apply_segment_edits(
+    segment: TranscriptSegment, edits: list[tuple[int, int, str]],
+) -> None:
+    """Keep corrected text and its word tokens aligned to the same audio windows."""
+    original = segment.text
+    if segment.tokens:
+        spans: list[tuple[int, int]] = []
+        cursor = 0
+        for token in segment.tokens:
+            start = original.find(token.text, cursor)
+            if start < 0:
+                raise ValueError("词级时间轴与原文无法对齐，请重新运行智能校对")
+            spans.append((start, start + len(token.text)))
+            cursor = spans[-1][1]
+        groups: list[tuple[int, int]] = []
+        for start, end, _ in edits:
+            affected = [
+                index for index, (left, right) in enumerate(spans)
+                if left < end and right > start
+            ]
+            if not affected:
+                raise ValueError("修正位置没有对应的词级时间戳")
+            first, last = affected[0], affected[-1]
+            if start < spans[first][0] or end > spans[last][1]:
+                raise ValueError("修正范围超出词级时间轴，请重新选择词语")
+            if groups and first <= groups[-1][1]:
+                groups[-1] = (groups[-1][0], max(groups[-1][1], last))
+            else:
+                groups.append((first, last))
+        corrected_tokens = []
+        cursor = 0
+        for first, last in groups:
+            corrected_tokens.extend(segment.tokens[cursor:first])
+            group_start, group_end = spans[first][0], spans[last][1]
+            group_text = original[group_start:group_end]
+            for start, end, replacement in reversed(edits):
+                if group_start <= start and end <= group_end:
+                    group_text = (
+                        group_text[:start - group_start] + replacement
+                        + group_text[end - group_start:]
+                    )
+            corrected_tokens.append(segment.tokens[first].model_copy(update={
+                "text": group_text,
+                "end_seconds": segment.tokens[last].end_seconds,
+            }))
+            cursor = last + 1
+        corrected_tokens.extend(segment.tokens[cursor:])
+        segment.tokens = corrected_tokens
+    for start, end, replacement in reversed(edits):
+        segment.text = segment.text[:start] + replacement + segment.text[end:]
+
+
 def _timestamp(seconds: float) -> str:
     rounded = max(0, round(seconds))
     hours, remainder = divmod(rounded, 3600)
@@ -483,15 +535,13 @@ def apply_review_corrections(
                 if edit in edits:
                     item.correction_term = edits[edit]
 
-        for (segment_index, term_start, term_end), replacement in sorted(
-            edits.items(),
-            key=lambda entry: (entry[0][0], entry[0][1]),
-            reverse=True,
-        ):
-            segment = segments_by_index[segment_index]
-            segment.text = (
-                segment.text[:term_start] + replacement + segment.text[term_end:]
+        edits_by_segment: dict[int, list[tuple[int, int, str]]] = {}
+        for (segment_index, term_start, term_end), replacement in sorted(edits.items()):
+            edits_by_segment.setdefault(segment_index, []).append(
+                (term_start, term_end, replacement)
             )
+        for segment_index, segment_edits in edits_by_segment.items():
+            _apply_segment_edits(segments_by_index[segment_index], segment_edits)
 
         original_transcript = job_dir / "transcript.original.txt"
         transcript_path = job_dir / "transcript.txt"

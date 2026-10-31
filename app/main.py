@@ -38,6 +38,7 @@ from app.models import (
     Job,
     JobStatus,
     ManualReviewMatch,
+    MinutesCorrectionSubmission,
     ReviewStatus,
     ReviewSubmission,
 )
@@ -609,6 +610,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "Content-Disposition": f'attachment; filename="minutes-v{version}.md"',
             },
         )
+
+    @app.delete("/api/jobs/{job_id}/minutes/{version}", response_model=Job)
+    def delete_minutes_version(job_id: str, version: int, latest_version: int) -> Job:
+        job = store.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if version < 1 or version > len(job.minutes_versions):
+            raise HTTPException(status_code=404, detail="纪要版本不存在")
+        if job.status != JobStatus.completed:
+            raise HTTPException(status_code=409, detail="会议尚未完成，无法删除纪要版本")
+        try:
+            return store.delete_minutes_version(job_id, version, latest_version)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/jobs/{job_id}/minutes/correct", response_model=Job)
+    def correct_minutes(job_id: str, submission: MinutesCorrectionSubmission) -> Job:
+        job = store.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        if job.status != JobStatus.completed:
+            raise HTTPException(status_code=409, detail="会议尚未完成，无法修正纪要")
+        if job.review_status == ReviewStatus.applying:
+            raise HTTPException(status_code=409, detail="转写修正正在生成纪要，请稍后重试")
+        try:
+            return store.correct_minutes(
+                job_id, submission.source_version, submission.latest_version,
+                submission.corrections,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/jobs/{job_id}/review/{item_id}/audio", response_class=FileResponse)
     def review_audio(job_id: str, item_id: str) -> FileResponse:

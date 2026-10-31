@@ -60,7 +60,14 @@ def test_agent_flag_correction_targets_selected_occurrence(tmp_path: Path) -> No
     ))
     review_dir = store.job_dir("repeated") / "review"
     review_dir.mkdir()
-    segment = TranscriptSegment(index=0, start_seconds=0, end_seconds=3, text="项目和项目")
+    segment = TranscriptSegment(
+        index=0, start_seconds=0, end_seconds=3, text="项目和项目",
+        tokens=[
+            TranscriptToken(start_seconds=0, end_seconds=1, text="项目"),
+            TranscriptToken(start_seconds=1, end_seconds=2, text="和"),
+            TranscriptToken(start_seconds=2, end_seconds=3, text="项目"),
+        ],
+    )
     (review_dir / "segments.json").write_text(
         json.dumps([segment.model_dump()]), encoding="utf-8",
     )
@@ -82,6 +89,10 @@ def test_agent_flag_correction_targets_selected_occurrence(tmp_path: Path) -> No
     )
 
     assert "项目和工程" in store.get("repeated").transcript
+    corrected = json.loads((review_dir / "segments.corrected.json").read_text(encoding="utf-8"))
+    assert corrected[0]["text"] == "项目和工程"
+    assert [token["text"] for token in corrected[0]["tokens"]] == ["项目", "和", "工程"]
+    assert corrected[0]["tokens"][-1]["start_seconds"] == 2
     record = store.corrections.records()[0]
     assert (record.term_start, record.source) == (3, "agent")
 

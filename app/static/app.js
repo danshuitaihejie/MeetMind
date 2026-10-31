@@ -475,13 +475,15 @@ function minutesVersionLabel(version, index, total) {
   if (uiLanguage === "en") {
     const label = version.source === "legacy"
       ? "Saved minutes (original version unavailable)"
-      : index === 0 ? "First version" : `Version ${index + 1}`;
+      : version.source === "manual" ? `Version ${index + 1} · Manual correction`
+        : version.source === "initial" && index === 0 ? "First version" : `Version ${index + 1}`;
     const time = new Date(version.created_at).toLocaleString("en-US");
     return `${label}${index === total - 1 ? " · Latest" : ""} · ${time}`;
   }
   const label = version.source === "legacy"
     ? "已保存纪要（历史首次版不可恢复）"
-    : index === 0 ? "首次生成" : `第 ${index + 1} 版`;
+    : version.source === "manual" ? `第 ${index + 1} 版 · 主动纠偏`
+      : version.source === "initial" && index === 0 ? "首次生成" : `第 ${index + 1} 版`;
   const time = new Date(version.created_at).toLocaleString(
     uiLanguage === "en" ? "en-US" : "zh-CN",
   );
@@ -1468,6 +1470,7 @@ function addManualPending(container, correction, apply, contextText = "") {
   row.dataset.segmentIndex = correction.segment_index;
   row.dataset.termStart = correction.term_start;
   row.dataset.originalTerm = correction.original_term;
+  row.dataset.learnGlobally = correction.learn_globally === false ? "false" : "true";
 
   const copy = document.createElement("div");
   const title = document.createElement("strong");
@@ -1700,6 +1703,7 @@ function renderReview(job, card) {
         term_start: Number(row.dataset.termStart),
         original_term: row.dataset.originalTerm,
         replacement: $("input", row).value.trim(),
+        learn_globally: row.dataset.learnGlobally !== "false",
       })).filter((item) => item.replacement);
       if (!corrections.length && !manualCorrections.length) {
         error.textContent = "请先确认一个疑似词，或主动搜索并添加一处纠偏。";
@@ -1718,6 +1722,7 @@ function renderReview(job, card) {
             manual_corrections: manualCorrections,
           }),
         });
+        state.selectedMinutesVersions.delete(job.id);
         await loadJobs();
         startPolling();
       } catch (requestError) {
@@ -1732,6 +1737,178 @@ function renderReview(job, card) {
     }
     apply.addEventListener("click", submitReview);
   }
+}
+
+function setupMinutesCorrection(job, card, getSelectedVersion) {
+  const section = $(".minutes-correction", card);
+  const form = $(".minutes-correction-form", section);
+  const original = $(".minutes-correction-original", section);
+  const replacement = $(".minutes-correction-replacement", section);
+  const results = $(".minutes-correction-results", section);
+  const pendingList = $(".minutes-correction-pending", section);
+  const apply = $(".minutes-correction-apply", section);
+  const error = $(".minutes-correction-error", section);
+  const versions = job.minutes_versions || [];
+  const english = uiLanguage === "en";
+  let pendingVersion = getSelectedVersion();
+  const pending = new Map();
+
+  const fail = (message) => {
+    error.textContent = message;
+    error.classList.remove("hidden");
+  };
+  const renderPending = () => {
+    pendingList.replaceChildren();
+    pending.forEach((item, start) => {
+      const row = document.createElement("div");
+      row.className = "minutes-correction-item";
+      const label = document.createElement("span");
+      label.textContent = `${item.original} → ${item.replacement}`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = english ? "Remove" : "移除";
+      remove.addEventListener("click", () => {
+        pending.delete(start);
+        renderPending();
+      });
+      row.append(label, remove);
+      pendingList.appendChild(row);
+    });
+    apply.classList.toggle("hidden", pending.size === 0);
+    apply.textContent = english
+      ? `Save ${pending.size} corrections as a new notes version →`
+      : `保存 ${pending.size} 处修正为新纪要版本 →`;
+    results.querySelectorAll(".minutes-correction-match").forEach((button) => {
+      const selected = pending.get(Number(button.dataset.start));
+      button.disabled = selected?.original === button.dataset.original
+        && selected?.replacement === button.dataset.replacement;
+    });
+    const selectAll = $(".minutes-correction-select-all", results);
+    if (selectAll) {
+      selectAll.disabled = [...results.querySelectorAll(".minutes-correction-match")]
+        .every((button) => button.disabled);
+    }
+  };
+  const queueCorrections = (corrections) => {
+    const next = new Map(pending);
+    corrections.forEach((item) => next.set(item.start, item));
+    if (next.size > 100) {
+      fail(english ? "You can save up to 100 wording corrections at once." : "一次最多保存 100 处纪要修正。");
+      return;
+    }
+    const ordered = [...next.values()].sort((left, right) => left.start - right.start);
+    if (ordered.some((item, index) => index > 0
+      && item.start < ordered[index - 1].start + ordered[index - 1].original.length)) {
+      fail(english ? "These corrections overlap. Remove a conflicting selection first."
+        : "修正位置有重叠，请先移除冲突的待修正项。");
+      return;
+    }
+    pending.clear();
+    next.forEach((item, start) => pending.set(start, item));
+    error.classList.add("hidden");
+    renderPending();
+  };
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    error.classList.add("hidden");
+    results.replaceChildren();
+    const from = original.value.trim();
+    const to = replacement.value.trim();
+    if (!from || !to || from === to) {
+      fail(english ? "Enter different original and replacement wording." : "请填写不同的原文和正确表达。");
+      return;
+    }
+    const content = versions[getSelectedVersion() - 1]?.content || "";
+    const positions = [];
+    let offset = 0;
+    while (positions.length < 30) {
+      const start = content.indexOf(from, offset);
+      if (start < 0) break;
+      positions.push(start);
+      offset = start + from.length;
+    }
+    if (!positions.length) {
+      fail(english ? "Wording not found in the selected notes version." : "所选纪要版本中没有找到这段原文。");
+      return;
+    }
+    const selection = document.createElement("div");
+    selection.className = "minutes-correction-selection";
+    const count = document.createElement("span");
+    count.textContent = english ? `${positions.length} matches in this search`
+      : `本次找到 ${positions.length} 处`;
+    const selectAll = document.createElement("button");
+    selectAll.type = "button";
+    selectAll.className = "minutes-correction-select-all";
+    selectAll.textContent = english ? "Select all results" : "全选当前结果";
+    selectAll.addEventListener("click", () => {
+      queueCorrections(positions.map((start) => ({
+        start, original: from, replacement: to,
+      })));
+    });
+    selection.append(count, selectAll);
+    results.appendChild(selection);
+    positions.forEach((start, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "minutes-correction-match";
+      button.dataset.start = String(start);
+      button.dataset.original = from;
+      button.dataset.replacement = to;
+      const label = document.createElement("span");
+      label.textContent = `${index + 1}. …${content.slice(Math.max(0, start - 25), start)}`;
+      const mark = document.createElement("mark");
+      mark.textContent = from;
+      const after = document.createTextNode(`${content.slice(start + from.length, start + from.length + 25)}…`);
+      label.append(mark, after);
+      button.append(label);
+      button.addEventListener("click", () => {
+        queueCorrections([{ start, original: from, replacement: to }]);
+      });
+      results.appendChild(button);
+    });
+    renderPending();
+  });
+
+  apply.addEventListener("click", async () => {
+    error.classList.add("hidden");
+    apply.disabled = true;
+    try {
+      const updated = await requestJSON(`/api/jobs/${job.id}/minutes/correct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_version: pendingVersion,
+          latest_version: versions.length,
+          corrections: [...pending.values()],
+        }),
+      });
+      state.selectedMinutesVersions.delete(job.id);
+      state.comparingJobIds.delete(job.id);
+      state.expandedJobId = job.id;
+      await loadJobs();
+    } catch (requestError) {
+      fail(requestError.message);
+      apply.disabled = false;
+    }
+  });
+
+  return (visible) => {
+    const selected = getSelectedVersion();
+    if (pendingVersion !== selected) {
+      pendingVersion = selected;
+      pending.clear();
+      renderPending();
+      results.replaceChildren();
+      original.value = "";
+      replacement.value = "";
+      error.classList.add("hidden");
+    }
+    section.classList.toggle("hidden", !visible || !versions.length);
+    $(".minutes-correction-version", section).textContent = english
+      ? `Based on version ${selected}. Saving creates the latest version; earlier versions stay available.`
+      : `基于当前选择的第 ${selected} 版保存，新修正版会成为最新版；原版本仍可查看。`;
+  };
 }
 
 function renderJob(job) {
@@ -1845,15 +2022,25 @@ function renderJob(job) {
     const versions = job.minutes_versions || [];
     const versionTools = $(".result-version-tools", card);
     const versionSelect = $(".result-version-select", card);
+    const versionDelete = $(".result-version-delete", card);
+    const deleteConfirmation = $(".result-version-delete-confirm", card);
+    const deletePrompt = $(".result-version-delete-prompt", card);
+    const deleteApply = $(".result-version-delete-apply", card);
+    const deleteCancel = $(".result-version-delete-cancel", card);
     const compareToggle = $(".compare-toggle", card);
     const compare = $(".result-compare", card);
     const actions = $(".result-actions", card);
     const minutesLink = $("[data-download='minutes']", card);
     let selectedVersion = state.selectedMinutesVersions.get(job.id) || versions.length;
-    if (selectedVersion > versions.length) selectedVersion = versions.length;
+    if (selectedVersion > versions.length) {
+      selectedVersion = versions.length;
+      state.selectedMinutesVersions.delete(job.id);
+    }
     let showingMinutes = Boolean(job.minutes);
     let comparing = state.comparingJobIds.has(job.id) && versions.length > 1;
     let current = "";
+    const hideDeleteConfirmation = () => deleteConfirmation.classList.add("hidden");
+    const updateMinutesCorrection = setupMinutesCorrection(job, card, () => selectedVersion);
     versions.forEach((version, index) => {
       const option = document.createElement("option");
       option.value = String(index + 1);
@@ -1861,6 +2048,7 @@ function renderJob(job) {
       versionSelect.appendChild(option);
     });
     if (versions.length) versionSelect.value = String(selectedVersion);
+    versionDelete.disabled = job.status !== "completed" || job.review_status === "applying";
     versionTools.classList.toggle("hidden", versions.length === 0);
     compareToggle.classList.toggle("hidden", versions.length < 2);
     const refreshResult = () => {
@@ -1869,10 +2057,15 @@ function renderJob(job) {
       content.classList.toggle("hidden", canCompare);
       compare.classList.toggle("hidden", !canCompare);
       actions.classList.toggle("hidden", canCompare);
+      updateMinutesCorrection(showingMinutes && !canCompare);
       versionTools.classList.toggle("hidden", !showingMinutes || versions.length === 0);
+      if (!showingMinutes || canCompare) hideDeleteConfirmation();
       compareToggle.setAttribute("aria-pressed", String(canCompare));
-      compareToggle.textContent = canCompare ? "退出差异对比" : versions[0]?.source === "legacy"
-        ? "对比最早保存版与最新版差异" : "对比首次版与最新版差异";
+      compareToggle.textContent = canCompare
+        ? (uiLanguage === "en" ? "Exit comparison" : "退出差异对比")
+        : versions[0]?.source === "initial"
+          ? (uiLanguage === "en" ? "Compare first and latest" : "对比首次版与最新版差异")
+          : (uiLanguage === "en" ? "Compare earliest remaining and latest" : "对比现存最早版与最新版差异");
       if (canCompare) {
         const first = versions[0];
         const latest = versions[versions.length - 1];
@@ -1906,8 +2099,51 @@ function renderJob(job) {
     }));
     versionSelect.addEventListener("change", () => {
       selectedVersion = Number(versionSelect.value);
-      state.selectedMinutesVersions.set(job.id, selectedVersion);
+      if (selectedVersion === versions.length) state.selectedMinutesVersions.delete(job.id);
+      else state.selectedMinutesVersions.set(job.id, selectedVersion);
+      hideDeleteConfirmation();
       refreshResult();
+    });
+    versionDelete.addEventListener("click", () => {
+      const last = versions.length === 1;
+      deletePrompt.textContent = uiLanguage === "en"
+        ? `Delete version ${selectedVersion}? ${last ? "This meeting will have no notes." : "Remaining versions will be renumbered."}`
+        : `确定删除第 ${selectedVersion} 版纪要吗？${last ? "删除后这场会议将没有纪要。" : "其余版本会重新编号。"}`;
+      deleteConfirmation.classList.remove("hidden");
+    });
+    deleteCancel.addEventListener("click", hideDeleteConfirmation);
+    deleteApply.addEventListener("click", async () => {
+      deleteApply.disabled = true;
+      versionDelete.disabled = true;
+      versionSelect.disabled = true;
+      try {
+        const response = await fetch(
+          `/api/jobs/${job.id}/minutes/${selectedVersion}?latest_version=${versions.length}`,
+          { method: "DELETE" },
+        );
+        if (!response.ok) {
+          const payload = await response.json();
+          throw new Error(i18n.translate(payload.detail || "删除纪要版本失败"));
+        }
+        const updated = await response.json();
+        if (updated.minutes_versions.length) {
+          const nextVersion = Math.min(selectedVersion, updated.minutes_versions.length);
+          if (nextVersion === updated.minutes_versions.length) {
+            state.selectedMinutesVersions.delete(job.id);
+          } else {
+            state.selectedMinutesVersions.set(job.id, nextVersion);
+          }
+        } else {
+          state.selectedMinutesVersions.delete(job.id);
+        }
+        state.comparingJobIds.delete(job.id);
+        await loadJobs();
+      } catch (error) {
+        deleteApply.disabled = false;
+        versionDelete.disabled = false;
+        versionSelect.disabled = false;
+        setError(error.message);
+      }
     });
     compareToggle.addEventListener("click", () => {
       comparing = !comparing;

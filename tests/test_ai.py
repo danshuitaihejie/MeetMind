@@ -51,6 +51,68 @@ def test_minimax_summary_request() -> None:
     assert service.summarize("会议原文") == "# 会议纪要\n\n完成。"
 
 
+@pytest.mark.parametrize(
+    ("content", "finish_reason", "error"),
+    [
+        ("<think>English reasoning", "length", "输出上限"),
+        ("<think>English reasoning", "stop", "推理内容"),
+        ("<think>English reasoning</think>\n# 会议纪要", "stop", "缺少完整"),
+    ],
+)
+def test_m3_rejects_incomplete_or_reasoning_only_minutes(
+    content: str, finish_reason: str, error: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read())
+        assert payload["max_completion_tokens"] == 8192
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": content}, "finish_reason": finish_reason}]},
+        )
+
+    settings = Settings(
+        minimax_api_key="test-key",
+        minimax_base_url="https://api.example.test",
+        summary_model="MiniMax-M3",
+    )
+    service = AIService(settings, transport=httpx.MockTransport(handler), sleeper=lambda _: None)
+    with pytest.raises(MiniMaxAPIError, match=error):
+        service.summarize("会议原文")
+
+
+def test_m3_removes_closed_reasoning_from_complete_minutes() -> None:
+    content = """<think>English reasoning</think>
+# 中文会议
+
+## 会议摘要
+摘要。
+## 关键结论
+结论。
+## 讨论要点
+讨论。
+## 行动项
+无。
+## 待确认事项
+无。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": content}, "finish_reason": "stop"}]},
+        )
+
+    settings = Settings(
+        minimax_api_key="test-key",
+        minimax_base_url="https://api.example.test",
+        summary_model="MiniMax-M3",
+    )
+    service = AIService(settings, transport=httpx.MockTransport(handler), sleeper=lambda _: None)
+    result = service.summarize("会议原文")
+    assert result.startswith("# 中文会议")
+    assert "<think>" not in result
+    assert "## 待确认事项" in result
+
+
 def test_minimax_api_error_is_readable(tmp_path: Path) -> None:
     audio = tmp_path / "meeting.mp3"
     audio.write_bytes(b"fake-mp3")

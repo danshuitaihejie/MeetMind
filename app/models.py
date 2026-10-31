@@ -97,6 +97,18 @@ class ReviewSubmission(BaseModel):
     )
 
 
+class MinutesTextCorrection(BaseModel):
+    start: int = Field(ge=0)
+    original: str = Field(min_length=1, max_length=500)
+    replacement: str = Field(min_length=1, max_length=500)
+
+
+class MinutesCorrectionSubmission(BaseModel):
+    source_version: int = Field(ge=1)
+    latest_version: int = Field(ge=1)
+    corrections: list[MinutesTextCorrection] = Field(min_length=1, max_length=100)
+
+
 class ChatTurn(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
@@ -254,7 +266,7 @@ class AIUsageSummary(BaseModel):
 class MinutesVersion(BaseModel):
     content: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Literal["initial", "regenerated", "legacy"]
+    source: Literal["initial", "regenerated", "legacy", "manual"]
 
 
 class Job(BaseModel):

@@ -4,10 +4,16 @@ import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.corrections import CorrectionMemory, CorrectionRecord
-from app.models import AIUsageCall, Job, MinutesVersion, ReviewStatus
+from app.models import (
+    AIUsageCall,
+    Job,
+    MinutesTextCorrection,
+    MinutesVersion,
+    ReviewStatus,
+)
 
 
 class JobStore:
@@ -136,7 +142,10 @@ class JobStore:
             with (self.root.parent / "chat_usage.jsonl").open("a", encoding="utf-8") as ledger:
                 ledger.write(call.model_dump_json() + "\n")
 
-    def save_minutes(self, job_id: str, content: str, *, regenerated: bool = False) -> Job:
+    def save_minutes(
+        self, job_id: str, content: str, *, regenerated: bool = False,
+        source: Literal["manual"] | None = None,
+    ) -> Job:
         """Publish the latest minutes and retain every successful generation."""
         with self._lock:
             job = self._jobs[job_id]
@@ -146,9 +155,66 @@ class JobStore:
             temporary.replace(path)
             job.minutes_versions.append(MinutesVersion(
                 content=content,
-                source="regenerated" if regenerated or job.minutes_versions else "initial",
+                source=source or (
+                    "regenerated" if regenerated or job.minutes_versions else "initial"
+                ),
             ))
             job.minutes = content
             job.updated_at = datetime.now(UTC)
             self._persist(job)
             return job.model_copy(deep=True)
+
+    def delete_minutes_version(
+        self, job_id: str, version: int, latest_version: int,
+    ) -> Job:
+        """Remove one snapshot and publish the last remaining version, if any."""
+        with self._lock:
+            job = self._jobs[job_id]
+            if job.review_status == ReviewStatus.applying:
+                raise ValueError("转写修正正在生成纪要，请稍后重试")
+            if len(job.minutes_versions) != latest_version:
+                raise ValueError("纪要版本已有变化，请刷新后重试")
+            if version < 1 or version > len(job.minutes_versions):
+                raise ValueError("所选纪要版本不存在")
+            job.minutes_versions.pop(version - 1)
+            job.minutes = job.minutes_versions[-1].content if job.minutes_versions else None
+            path = self.job_dir(job_id) / "minutes.md"
+            if job.minutes is None:
+                path.unlink(missing_ok=True)
+            else:
+                temporary = path.with_suffix(".tmp")
+                temporary.write_text(job.minutes, encoding="utf-8")
+                temporary.replace(path)
+            job.updated_at = datetime.now(UTC)
+            self._persist(job)
+            return job.model_copy(deep=True)
+
+    def correct_minutes(
+        self, job_id: str, source_version: int, latest_version: int,
+        corrections: list[MinutesTextCorrection],
+    ) -> Job:
+        """Apply exact edits to a selected snapshot, then publish a new version."""
+        with self._lock:
+            job = self._jobs[job_id]
+            if job.review_status == ReviewStatus.applying:
+                raise ValueError("转写修正正在生成纪要，请稍后重试")
+            if len(job.minutes_versions) != latest_version:
+                raise ValueError("纪要已有新版本，请刷新后重新核对修正")
+            if source_version > latest_version:
+                raise ValueError("所选纪要版本不存在")
+            content = job.minutes_versions[source_version - 1].content
+            ordered = sorted(corrections, key=lambda item: item.start)
+            previous_end = 0
+            for correction in ordered:
+                end = correction.start + len(correction.original)
+                if correction.start < previous_end:
+                    raise ValueError("纪要修正位置重叠，请重新选择")
+                if content[correction.start:end] != correction.original:
+                    raise ValueError("纪要修正位置已失效，请重新查找")
+                if correction.original == correction.replacement:
+                    raise ValueError("修正内容与原文相同")
+                previous_end = end
+            for correction in reversed(ordered):
+                end = correction.start + len(correction.original)
+                content = content[:correction.start] + correction.replacement + content[end:]
+            return self.save_minutes(job_id, content, source="manual")

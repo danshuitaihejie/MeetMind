@@ -6,7 +6,7 @@
     <meta name="description" content="MeetMind turns long meeting recordings into concise, searchable notes and transcripts." data-zh-content="MeetMind：将会议录音快速压缩、转写并整理成结构化纪要。" />
     <title data-zh="MeetMind · 让会议只留下结论">MeetMind · Keep only the meeting takeaways</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles.css?v=20261025-19" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20261031-1" />
   </head>
   <body class="desktop-view-upload">
     <header class="topbar">
@@ -292,7 +292,13 @@
               </div>
               <div class="result-version-tools hidden">
                 <label><span data-zh="纪要版本">Notes version</span> <select class="result-version-select" aria-label="Select notes version" data-zh-aria-label="选择纪要版本"></select></label>
+                <button class="result-version-delete" type="button" data-zh="删除所选版本">Delete selected version</button>
                 <button class="compare-toggle" type="button" aria-pressed="false" data-zh="对比首次版与最新版差异">Compare the first and latest versions</button>
+              </div>
+              <div class="result-version-delete-confirm hidden" role="group" aria-label="Confirm deleting notes version" data-zh-aria-label="确认删除纪要版本">
+                <span class="result-version-delete-prompt"></span>
+                <button class="result-version-delete-apply" type="button" data-zh="确认删除">Delete</button>
+                <button class="result-version-delete-cancel" type="button" data-zh="取消">Cancel</button>
               </div>
               <div class="result-content"></div>
               <div class="result-compare hidden">
@@ -316,18 +322,33 @@
               <div class="review-heading">
                 <div>
                   <span data-zh="智能校对">ENHANCED REVIEW</span>
-                  <strong data-zh="不确定文字校对">Review uncertain words</strong>
+                  <strong data-zh="智能校对与主动纠偏">Review and correct</strong>
                 </div>
                 <button class="review-start" type="button" data-zh="智能校对：OCR + 原声">Smart review: OCR + original audio</button>
               </div>
-              <p class="review-description" data-zh="你也可以主动纠偏 AI 没标出的词：启动校对后，在下方搜索原词并选择准确位置。视频画面仅在本地 OCR；置信度为 AI 交叉校验估值。">
-                You can also correct words AI did not flag. Start review, search for the original word below, and select the right occurrence. Video frames are processed with local OCR; confidence is estimated through AI cross-checking.
+              <p class="review-description" data-zh="可直接修正当前所选纪要版本的错误表达；转写词语纠偏需先启动原声校对，再搜索并选择准确位置。视频画面仅在本地 OCR；置信度为 AI 交叉校验估值。">
+                Correct wording in the selected notes version here. For transcript terms, start audio review, then find and select the right occurrence. Video frames are processed with local OCR; confidence is estimated through AI cross-checking.
               </p>
               <div class="review-progress hidden"><i><b></b></i><span></span></div>
               <p class="review-error hidden"></p>
+              <section class="minutes-correction hidden" aria-label="Correct selected notes version" data-zh-aria-label="纠偏当前纪要版本">
+                <div class="manual-review-heading">
+                  <strong data-zh="主动纠偏：修正所选纪要版本中的错误表达">Manual correction: fix wording in the selected notes version</strong>
+                </div>
+                <p class="minutes-correction-version"></p>
+                <form class="manual-review-form minutes-correction-form">
+                  <label><span data-zh="纪要中的原文">Original wording in notes</span><input class="minutes-correction-original" type="text" maxlength="500" autocomplete="off"></label>
+                  <label><span data-zh="修改为">Replace with</span><input class="minutes-correction-replacement" type="text" maxlength="500" autocomplete="off"></label>
+                  <button type="submit" data-zh="查找位置">Find matches</button>
+                </form>
+                <p class="minutes-correction-error hidden" role="alert"></p>
+                <button class="minutes-correction-apply hidden" type="button" data-zh="保存修正为新纪要版本 →">Save corrections as a new notes version →</button>
+                <div class="minutes-correction-results"></div>
+                <div class="minutes-correction-pending"></div>
+              </section>
               <section class="manual-review hidden">
                 <div class="manual-review-heading">
-                  <strong data-zh="主动纠偏：修正 AI 没标出的词">Manual correction: fix words AI missed</strong>
+                  <strong data-zh="主动纠偏：修正 AI 没标出的转写词语">Manual correction: fix transcript words AI missed</strong>
                   <span data-zh="不限置信度">Any confidence level</span>
                 </div>
                 <p data-zh="输入转写中的原词和正确写法，再勾选一处、多处或全选当前结果。每次搜索最多显示前 30 处。">Enter the original and corrected words, then select one or more occurrences. Each search shows up to 30 matches.</p>
@@ -367,6 +388,6 @@
     </footer>
     <script src="/assets/minutes_diff.js?v=20261021-1" defer></script>
     <script src="/assets/i18n.js?v=20261025-2" defer></script>
-    <script src="/assets/app.js?v=20261025-22" defer></script>
+    <script src="/assets/app.js?v=20261031-2" defer></script>
   </body>
 </html>

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.models import Job, JobStatus
+from app.store import JobStore
 
 
 def write_sample_wav(path: Path) -> None:
@@ -80,6 +81,89 @@ def test_minutes_versions_survive_restart_and_legacy_jobs(tmp_path: Path) -> Non
     assert [version.source for version in restarted.get("legacy").minutes_versions] == [
         "legacy", "regenerated",
     ]
+
+
+def test_correct_selected_minutes_version_preserves_history_and_transcript(
+    tmp_path: Path,
+) -> None:
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    store = app.state.store
+    store.create(Job(
+        id="minutes-correction", filename="meeting.wav", status=JobStatus.completed,
+        transcript="会议原始转写。",
+    ))
+    first = "# 纪要\n结论：上线了。\n行动项：上线了。"
+    store.save_minutes("minutes-correction", first)
+    store.save_minutes("minutes-correction", "# 后来版本\n不同结论", regenerated=True)
+    payload = {
+        "source_version": 1,
+        "latest_version": 2,
+        "corrections": [
+            {"start": first.index("上线了"), "original": "上线了", "replacement": "计划上线"},
+            {"start": first.rindex("上线了"), "original": "上线了", "replacement": "等待确认"},
+        ],
+    }
+    with TestClient(app) as client:
+        response = client.post("/api/jobs/minutes-correction/minutes/correct", json=payload)
+        assert response.status_code == 200
+        corrected = response.json()
+        assert corrected["minutes"] == "# 纪要\n结论：计划上线。\n行动项：等待确认。"
+        assert [item["content"] for item in corrected["minutes_versions"][:2]] == [
+            first, "# 后来版本\n不同结论",
+        ]
+        assert corrected["minutes_versions"][2]["source"] == "manual"
+        assert corrected["transcript"] == "会议原始转写。"
+        assert client.get("/api/jobs/minutes-correction/minutes").text == corrected["minutes"]
+        assert client.post(
+            "/api/jobs/minutes-correction/minutes/correct", json=payload,
+        ).status_code == 409
+        assert client.post(
+            "/api/jobs/minutes-correction/minutes/correct",
+            json={**payload, "latest_version": 3, "corrections": [
+                {"start": 0, "original": "错位", "replacement": "修正"},
+            ]},
+        ).status_code == 409
+    assert store.corrections.records() == []
+
+
+def test_delete_minutes_version_updates_latest_and_survives_restart(tmp_path: Path) -> None:
+    app = create_app(Settings(data_dir=tmp_path, mock_ai=True))
+    store = app.state.store
+    store.create(Job(
+        id="minutes-delete", filename="meeting.wav", status=JobStatus.completed,
+        transcript="会议原始转写。",
+    ))
+    for index in range(1, 4):
+        store.save_minutes("minutes-delete", f"# 第 {index} 版", regenerated=index > 1)
+
+    with TestClient(app) as client:
+        url = "/api/jobs/minutes-delete/minutes"
+        assert client.delete(f"{url}/2?latest_version=3").status_code == 200
+        middle = client.get("/api/jobs/minutes-delete").json()
+        assert [item["content"] for item in middle["minutes_versions"]] == [
+            "# 第 1 版", "# 第 3 版",
+        ]
+        assert middle["minutes"] == "# 第 3 版"
+        assert client.get(f"{url}/2").text == "# 第 3 版"
+        assert client.delete(f"{url}/2?latest_version=3").status_code == 409
+        assert client.delete(f"{url}/3?latest_version=2").status_code == 404
+
+        latest = client.delete(f"{url}/2?latest_version=2")
+        assert latest.status_code == 200
+        assert latest.json()["minutes"] == "# 第 1 版"
+        assert client.get(url).text == "# 第 1 版"
+
+        final = client.delete(f"{url}/1?latest_version=1")
+        assert final.status_code == 200
+        assert final.json()["minutes"] is None
+        assert final.json()["minutes_versions"] == []
+        assert final.json()["transcript"] == "会议原始转写。"
+        assert client.get(url).status_code == 404
+
+    restarted = JobStore(tmp_path / "jobs").get("minutes-delete")
+    assert restarted is not None
+    assert restarted.minutes is None
+    assert restarted.minutes_versions == []
 
 
 def test_rejects_unsupported_upload(tmp_path: Path) -> None:
